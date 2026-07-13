@@ -64,6 +64,7 @@ Copy-Item .env.example .env.local
 
 ```dotenv
 SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 SUPABASE_SECRET_KEY=sb_secret_...
 ```
 

@@ -1,6 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
+import { createSupabaseAdminClient, getSupabaseAdminConfig } from "@/lib/supabase-admin";
 import { MARKER_COLORS, TOTAL_MARKERS, type ExperimentEventType, type ExperimentSubmission } from "@/types/experiment";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -122,10 +122,7 @@ function isValidSubmission(value: unknown): value is ExperimentSubmission {
 }
 
 export async function POST(request: Request) {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseSecretKey) {
+  if (!getSupabaseAdminConfig()) {
     return NextResponse.json(
       { message: "Supabase 환경 변수가 설정되지 않았습니다. .env.local 파일을 확인해 주세요." },
       { status: 503 },
@@ -149,9 +146,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "제출 시간이 시작 시간보다 빠를 수 없습니다." }, { status: 400 });
   }
 
-  const supabase = createClient(supabaseUrl, supabaseSecretKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  const supabase = createSupabaseAdminClient();
   const markerRows = body.markers.map((marker) => ({
     marker_client_id: marker.id,
     color: marker.color,
