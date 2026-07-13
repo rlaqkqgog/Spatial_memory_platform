@@ -121,6 +121,17 @@ npm run build
 
 브라우저는 Supabase에 직접 연결하지 않습니다. Next.js 서버 API만 Secret key를 사용하고, SQL은 Row Level Security를 켠 상태에서 참가자용 테이블의 직접 접근을 막습니다. 제출·마커·이벤트는 PostgreSQL 함수 하나에서 트랜잭션으로 저장됩니다.
 
+### 이벤트 로그 시간과 NULL 값
+
+`experiment_events`의 `occurred_at`은 참가자가 실제로 행동한 시각입니다. `created_at`은 제출 버튼을 누른 뒤 서버가 이벤트를 한 번에 저장한 시각이므로, 같은 제출의 이벤트에서는 대부분 같은 값으로 보이는 것이 정상입니다.
+
+- `start`: 마커·색상·좌표가 없으므로 관련 열은 `NULL`
+- `color_select`: 색상만 있으므로 마커 ID·좌표는 `NULL`
+- `marker_place`, `marker_move`, `marker_delete`: 마커 ID·색상·X/Y 좌표가 있음
+- `submit`: 마커·색상·좌표가 없으므로 관련 열은 `NULL`
+
+참가자 ID와 함께 보기 위해서는 `202607130003_admin_event_log_view.sql`을 실행한 뒤 Table Editor의 **Views**에서 `admin_event_log`를 여세요. `participant_action_at`이 실제 행동 시각이고, `recorded_at`은 서버 저장 시각입니다.
+
 ## Vercel 배포
 
 1. 이 프로젝트를 GitHub 저장소에 올립니다.
