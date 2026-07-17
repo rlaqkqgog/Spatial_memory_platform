@@ -8,14 +8,13 @@ export const TOTAL_MARKERS = MARKER_COLORS.length * MAX_MARKERS_PER_COLOR;
 /** 현재 연구 조건의 식별자입니다. 이후 관리자 기능에서 실험 조건별 값으로 교체합니다. */
 export const DEFAULT_EXPERIMENT_CODE = "default";
 
-export const GUIDE_TYPES = ["none", "voice", "visual", "voice_visual"] as const;
+export const GUIDE_TYPES = ["VG", "AAG", "NG"] as const;
 export type GuideType = (typeof GUIDE_TYPES)[number];
 
 export const GUIDE_TYPE_LABELS: Record<GuideType, string> = {
-  none: "가이드 없음",
-  voice: "음성 가이드",
-  visual: "시각 가이드",
-  voice_visual: "음성+시각 가이드",
+  VG: "시각 가이드(VG)",
+  AAG: "음성 가이드(AAG)",
+  NG: "가이드 없음(NG)",
 };
 
 export interface Marker {

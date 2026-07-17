@@ -132,7 +132,7 @@ npm run build
 
 참가자 ID와 함께 보기 위해서는 `202607130003_admin_event_log_view.sql`을 실행한 뒤 Table Editor의 **Views**에서 `admin_event_log`를 여세요. `participant_action_at`이 실제 행동 시각이고, `recorded_at`은 서버 저장 시각입니다.
 
-가이드 유형 기록 기능을 배포하기 전에 `supabase/migrations/202607170001_add_guide_type.sql`을 실행하세요. 기존 응답은 `unspecified`(미기록)로 유지되고, 이후 응답은 `none`, `voice`, `visual`, `voice_visual` 중 하나로 저장됩니다. 관리자 응답 목록과 `admin_event_log`에도 가이드 유형이 표시됩니다.
+가이드 유형 기록 기능을 배포하기 전에 `supabase/migrations/202607170001_add_guide_type.sql`과 `202607170002_normalize_guide_types.sql`을 순서대로 실행하세요. 기존 응답은 `unspecified`(미기록)로 유지되고, 이후 응답은 시각 가이드 `VG`, 음성 가이드 `AAG`, 가이드 없음 `NG` 중 하나로 저장됩니다. 관리자 응답 목록과 `admin_event_log`에도 같은 코드가 표시됩니다.
 
 ## AAG 오브젝트 배치 정답 세트
 
