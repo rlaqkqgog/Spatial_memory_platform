@@ -115,7 +115,7 @@ npm run build
 
 ## 저장 데이터와 보안
 
-- `experiment_submissions`: 참가자 ID, 실험 조건 코드, 시작·제출 시각, 소요 시간, 총 삭제 횟수
+- `experiment_submissions`: 참가자 ID, 체험한 가이드 유형, 실험 조건 코드, 시작·제출 시각, 소요 시간, 총 삭제 횟수
 - `marker_responses`: 색상, 정규화 X/Y 좌표, 배치 시각, 이동 횟수
 - `experiment_events`: 시작, 색상 선택, 배치, 이동, 삭제, 제출 시각과 위치
 
@@ -131,6 +131,41 @@ npm run build
 - `submit`: 마커·색상·좌표가 없으므로 관련 열은 `NULL`
 
 참가자 ID와 함께 보기 위해서는 `202607130003_admin_event_log_view.sql`을 실행한 뒤 Table Editor의 **Views**에서 `admin_event_log`를 여세요. `participant_action_at`이 실제 행동 시각이고, `recorded_at`은 서버 저장 시각입니다.
+
+가이드 유형 기록 기능을 배포하기 전에 `supabase/migrations/202607170001_add_guide_type.sql`을 실행하세요. 기존 응답은 `unspecified`(미기록)로 유지되고, 이후 응답은 `none`, `voice`, `visual`, `voice_visual` 중 하나로 저장됩니다. 관리자 응답 목록과 `admin_event_log`에도 가이드 유형이 표시됩니다.
+
+## AAG 오브젝트 배치 정답 세트
+
+참가자 응답(`experiment_submissions`, `marker_responses`, `experiment_events`)과 AAG 정답 데이터는 분리되어 있습니다. AAG 데이터는 관리자 로그인 후 `/admin/aag-answer-sets`에서만 관리합니다.
+
+### Migration 적용
+
+초기 스키마와 관리자 migration을 적용한 뒤 `supabase/migrations/202607140001_aag_answer_sets.sql`을 Supabase SQL Editor에서 실행합니다. 이 migration은 실제 좌표를 만들지 않고 `FP1-S1`~`FP2-S3`의 빈 `draft` 세트 6개만 생성합니다.
+
+### 입력 데이터 형식
+
+각 세트에 아래 필드를 가진 오브젝트를 최대 12개까지 입력할 수 있습니다. `answer_marker_id`는 화면에서 생성되며, 저장 후 다시 불러와도 유지됩니다.
+
+| 필드 | 형식 | 설명 |
+| --- | --- | --- |
+| `color` | `red` / `blue` / `green` / `yellow` | 색상별 3개가 필요합니다. 같은 색상 안의 순서는 채점에 사용하지 않습니다. |
+| `label` | 고유 텍스트 | MRUK authoring에서 추적 가능한 오브젝트 이름입니다. |
+| `world_x`, `world_y`, `world_z` | 실수 | Meta Quest Space Scan 및 Unity MRUK 기준 실제 공간 좌표입니다. |
+| `plan_x`, `plan_y` | `0~1` 실수 | 웹 평면도와 이후 채점에 쓰는 정규화 좌표입니다. |
+| `seed`, `generator_version` | 선택 텍스트 | 배치 생성 또는 관리 이력입니다. |
+
+경계·zone·최소 거리·벽 clearance·world-to-plan 변환 규칙은 아직 `TBD` 설정으로만 보관합니다. 이 값들이 확정되기 전에는 임의 좌표나 자동 배치를 입력하지 마세요.
+
+### 검증 및 수동 테스트
+
+1. 관리자 로그인 후 `/admin/aag-answer-sets`에서 6개의 `draft` 세트를 확인합니다.
+2. 한 세트에 실제 authoring 데이터 12개를 입력합니다. 색상마다 정확히 3개이며 모든 `plan_x`, `plan_y`가 `0~1`인지 확인합니다.
+3. `draft 저장` 후 페이지를 새로 열어 세트 ID, `answer_marker_id`, world/plan 좌표가 동일한지 확인합니다.
+4. `검증 후 ready 처리`를 누릅니다. 12개 미만, 색상 수가 다름, plan 좌표 범위 오류가 있으면 `ready` 처리가 거부되어야 합니다.
+5. `ready` 세트에서만 CSV 내보내기가 가능한지 확인합니다. CSV 열은 `floor_plan_id,set_id,answer_marker_id,color,world_x,world_y,world_z,plan_x,plan_y,label`입니다.
+6. 기존 `/` 참가자 제출을 한 번 수행한 뒤 `/admin`에서 응답을 확인합니다. AAG 정답 세트는 참가자 응답 테이블·이벤트 로그에 추가되지 않아야 합니다.
+
+다음 authoring 단계에서는 각 FP1/FP2의 실제 평면도 경계와 zone, 최소 거리·벽 clearance, Meta Quest world 좌표와 정규화 평면도 좌표 사이의 변환 규칙, 6개 세트의 실제 오브젝트 좌표를 연구자가 제공해야 합니다. Hungarian 자동 채점 등은 이 단계에 포함하지 않습니다.
 
 ## Vercel 배포
 

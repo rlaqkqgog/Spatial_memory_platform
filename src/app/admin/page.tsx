@@ -1,13 +1,16 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { ParticipantList } from "@/components/admin/participant-list";
 import { getCurrentAdmin } from "@/lib/admin-session";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import type { GuideType } from "@/types/experiment";
 
 interface SubmissionRow {
   id: string;
   participant_id: string;
   experiment_code: string;
+  guide_type: GuideType | "unspecified";
   started_at: string;
   submitted_at: string;
   duration_ms: number;
@@ -23,7 +26,7 @@ export default async function AdminPage() {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("experiment_submissions")
-    .select("id, participant_id, experiment_code, started_at, submitted_at, duration_ms, deleted_marker_count")
+    .select("id, participant_id, experiment_code, guide_type, started_at, submitted_at, duration_ms, deleted_marker_count")
     .order("submitted_at", { ascending: false });
 
   const submissions = (data ?? []) as SubmissionRow[];
@@ -38,6 +41,12 @@ export default async function AdminPage() {
             <p className="mt-2 text-sm text-slate-600">제출이 완료된 응답만 표시합니다.</p>
           </div>
           <div className="flex items-center gap-4">
+            <Link
+              href="/admin/aag-answer-sets"
+              className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+            >
+              AAG 정답 세트
+            </Link>
             <p className="text-sm text-slate-600">{admin.email}</p>
             <form action="/api/admin/logout" method="post">
               <button

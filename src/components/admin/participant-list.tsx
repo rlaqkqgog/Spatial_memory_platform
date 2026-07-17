@@ -1,7 +1,10 @@
+import { GUIDE_TYPE_LABELS, type GuideType } from "@/types/experiment";
+
 interface SubmissionRow {
   id: string;
   participant_id: string;
   experiment_code: string;
+  guide_type: GuideType | "unspecified";
   started_at: string;
   submitted_at: string;
   duration_ms: number;
@@ -50,6 +53,9 @@ export function ParticipantList({ submissions }: ParticipantListProps) {
                 실험 조건
               </th>
               <th scope="col" className="px-5 py-4 font-semibold">
+                가이드 유형
+              </th>
+              <th scope="col" className="px-5 py-4 font-semibold">
                 제출 시각 (KST)
               </th>
               <th scope="col" className="px-5 py-4 font-semibold">
@@ -65,6 +71,9 @@ export function ParticipantList({ submissions }: ParticipantListProps) {
               <tr key={submission.id} className="hover:bg-slate-50">
                 <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-950">{submission.participant_id}</td>
                 <td className="whitespace-nowrap px-5 py-4">{submission.experiment_code}</td>
+                <td className="whitespace-nowrap px-5 py-4">
+                  {submission.guide_type === "unspecified" ? "미기록" : GUIDE_TYPE_LABELS[submission.guide_type]}
+                </td>
                 <td className="whitespace-nowrap px-5 py-4">{formatDateTime(submission.submitted_at)}</td>
                 <td className="whitespace-nowrap px-5 py-4">{formatDuration(submission.duration_ms)}</td>
                 <td className="whitespace-nowrap px-5 py-4">{submission.deleted_marker_count}</td>

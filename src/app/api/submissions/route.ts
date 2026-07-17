@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createSupabaseAdminClient, getSupabaseAdminConfig } from "@/lib/supabase-admin";
-import { MARKER_COLORS, TOTAL_MARKERS, type ExperimentEventType, type ExperimentSubmission } from "@/types/experiment";
+import { GUIDE_TYPES, MARKER_COLORS, TOTAL_MARKERS, type ExperimentEventType, type ExperimentSubmission } from "@/types/experiment";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EVENT_TYPES = new Set<ExperimentEventType>([
@@ -29,6 +29,10 @@ function isNormalizedCoordinate(value: unknown): value is number {
 
 function isMarkerColor(value: unknown): value is (typeof MARKER_COLORS)[number] {
   return typeof value === "string" && MARKER_COLORS.includes(value as (typeof MARKER_COLORS)[number]);
+}
+
+function isGuideType(value: unknown): value is (typeof GUIDE_TYPES)[number] {
+  return typeof value === "string" && GUIDE_TYPES.includes(value as (typeof GUIDE_TYPES)[number]);
 }
 
 function hasValidOptionalMarkerDetails(event: UnknownRecord): boolean {
@@ -72,6 +76,7 @@ function isValidSubmission(value: unknown): value is ExperimentSubmission {
     typeof value.participantId !== "string" ||
     value.participantId.trim().length < 2 ||
     value.participantId.length > 100 ||
+    !isGuideType(value.guideType) ||
     !isValidDate(value.startedAt) ||
     !isValidDate(value.submittedAt) ||
     typeof value.deletedMarkerCount !== "number" ||
@@ -168,6 +173,7 @@ export async function POST(request: Request) {
   const { data: submissionId, error } = await supabase.rpc("record_experiment_submission", {
     p_experiment_code: body.experimentCode.trim(),
     p_participant_id: body.participantId.trim(),
+    p_guide_type: body.guideType,
     p_started_at: body.startedAt,
     p_submitted_at: body.submittedAt,
     p_duration_ms: Math.round(submittedAtMs - startedAtMs),

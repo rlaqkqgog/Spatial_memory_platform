@@ -11,8 +11,10 @@ import { canPlaceMarker, getRemainingMarkersByColor } from "@/lib/markers";
 import { submitExperiment } from "@/lib/submission-client";
 import {
   DEFAULT_EXPERIMENT_CODE,
+  GUIDE_TYPE_LABELS,
   TOTAL_MARKERS,
   type ExperimentEvent,
+  type GuideType,
   type Marker,
   type MarkerColor,
 } from "@/types/experiment";
@@ -25,6 +27,7 @@ function now(): string {
 
 export function ExperimentClient() {
   const [participantId, setParticipantId] = useState<string | null>(null);
+  const [guideType, setGuideType] = useState<GuideType | null>(null);
   const [startedAt, setStartedAt] = useState<string | null>(null);
   const [activeColor, setActiveColor] = useState<MarkerColor>("red");
   const [markers, setMarkers] = useState<Marker[]>([]);
@@ -42,9 +45,10 @@ export function ExperimentClient() {
     setEvents((currentEvents) => [...currentEvents, event]);
   }
 
-  function handleStart(id: string) {
+  function handleStart(id: string, selectedGuideType: GuideType) {
     const started = now();
     setParticipantId(id);
+    setGuideType(selectedGuideType);
     setStartedAt(started);
     setEvents([{ type: "start", occurredAt: started }]);
   }
@@ -156,7 +160,7 @@ export function ExperimentClient() {
   }
 
   async function handleSubmit() {
-    if (!participantId || !startedAt || isInteractionDisabled) {
+    if (!participantId || !guideType || !startedAt || isInteractionDisabled) {
       return;
     }
 
@@ -176,6 +180,7 @@ export function ExperimentClient() {
       const { submissionId: savedId } = await submitExperiment({
         experimentCode: DEFAULT_EXPERIMENT_CODE,
         participantId,
+        guideType,
         startedAt,
         submittedAt,
         deletedMarkerCount,
@@ -219,7 +224,8 @@ export function ExperimentClient() {
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">위치 응답 입력</h1>
           </div>
           <p className="text-sm text-slate-600">
-            참가자 ID: <span className="font-semibold text-slate-900">{participantId}</span>
+            참가자 번호: <span className="font-semibold text-slate-900">{participantId}</span>
+            {guideType ? <> · 가이드: <span className="font-semibold text-slate-900">{GUIDE_TYPE_LABELS[guideType]}</span></> : null}
           </p>
         </header>
 
