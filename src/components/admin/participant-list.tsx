@@ -21,6 +21,39 @@ interface ParticipantListProps {
   submissions: SubmissionRow[];
 }
 
+/** 하나의 응답(위치 + 연결된 우연객체)을 삭제하는 버튼입니다. */
+function DeleteButton({ submissionId, participantId, onDeleted }: { submissionId: string; participantId: string; onDeleted: () => void }) {
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (!window.confirm(`${participantId}의 이 응답과 연결된 우연객체 응답을 삭제할까요? 되돌릴 수 없습니다.`)) {
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/admin/submissions/${submissionId}`, { method: "DELETE" });
+      if (!response.ok) {
+        throw new Error("failed");
+      }
+      onDeleted();
+    } catch {
+      setIsDeleting(false);
+      window.alert("삭제 중 오류가 발생했습니다. 다시 시도해 주세요.");
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={isDeleting}
+      onClick={handleDelete}
+      className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {isDeleting ? "삭제 중…" : "삭제"}
+    </button>
+  );
+}
+
 function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat("ko-KR", {
     dateStyle: "short",
@@ -85,7 +118,9 @@ function SessionMatcher({ submissionId, initial }: { submissionId: string; initi
   );
 }
 
-export function ParticipantList({ submissions }: ParticipantListProps) {
+export function ParticipantList({ submissions: initialSubmissions }: ParticipantListProps) {
+  const [submissions, setSubmissions] = useState(initialSubmissions);
+
   if (submissions.length === 0) {
     return (
       <section className="rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center shadow-sm">
@@ -125,6 +160,9 @@ export function ParticipantList({ submissions }: ParticipantListProps) {
               <th scope="col" className="px-5 py-4 font-semibold">
                 삭제 수
               </th>
+              <th scope="col" className="px-5 py-4 font-semibold">
+                관리
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -142,6 +180,13 @@ export function ParticipantList({ submissions }: ParticipantListProps) {
                 <td className="whitespace-nowrap px-5 py-4">{formatDateTime(submission.submitted_at)}</td>
                 <td className="whitespace-nowrap px-5 py-4">{formatDuration(submission.duration_ms)}</td>
                 <td className="whitespace-nowrap px-5 py-4">{submission.deleted_marker_count}</td>
+                <td className="whitespace-nowrap px-5 py-4">
+                  <DeleteButton
+                    submissionId={submission.id}
+                    participantId={submission.participant_id}
+                    onDeleted={() => setSubmissions((rows) => rows.filter((row) => row.id !== submission.id))}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
