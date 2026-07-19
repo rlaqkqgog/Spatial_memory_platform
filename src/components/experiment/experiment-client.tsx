@@ -6,17 +6,19 @@ import { ColorSelector } from "@/components/experiment/color-selector";
 import { ExperimentInstructions } from "@/components/experiment/experiment-instructions";
 import { FloorPlanCanvas } from "@/components/experiment/floor-plan-canvas";
 import { MarkerProgress } from "@/components/experiment/marker-progress";
-import { ParticipantIdForm } from "@/components/experiment/participant-id-form";
+import { ParticipantIdForm, type ExperimentSetup } from "@/components/experiment/participant-id-form";
 import { canPlaceMarker, getRemainingMarkersByColor } from "@/lib/markers";
 import { submitExperiment } from "@/lib/submission-client";
 import {
-  DEFAULT_EXPERIMENT_CODE,
+  buildExperimentCode,
   GUIDE_TYPE_LABELS,
   TOTAL_MARKERS,
   type ExperimentEvent,
+  type FloorPlan,
   type GuideType,
   type Marker,
   type MarkerColor,
+  type SessionNumber,
 } from "@/types/experiment";
 
 type Notice = { kind: "error" | "info"; message: string } | null;
@@ -28,6 +30,8 @@ function now(): string {
 export function ExperimentClient() {
   const [participantId, setParticipantId] = useState<string | null>(null);
   const [guideType, setGuideType] = useState<GuideType | null>(null);
+  const [sessionNumber, setSessionNumber] = useState<SessionNumber | null>(null);
+  const [floorPlan, setFloorPlan] = useState<FloorPlan | null>(null);
   const [startedAt, setStartedAt] = useState<string | null>(null);
   const [activeColor, setActiveColor] = useState<MarkerColor>("red");
   const [markers, setMarkers] = useState<Marker[]>([]);
@@ -45,10 +49,12 @@ export function ExperimentClient() {
     setEvents((currentEvents) => [...currentEvents, event]);
   }
 
-  function handleStart(id: string, selectedGuideType: GuideType) {
+  function handleStart(setup: ExperimentSetup) {
     const started = now();
-    setParticipantId(id);
-    setGuideType(selectedGuideType);
+    setParticipantId(setup.participantId);
+    setGuideType(setup.guideType);
+    setSessionNumber(setup.sessionNumber);
+    setFloorPlan(setup.floorPlan);
     setStartedAt(started);
     setEvents([{ type: "start", occurredAt: started }]);
   }
@@ -160,7 +166,7 @@ export function ExperimentClient() {
   }
 
   async function handleSubmit() {
-    if (!participantId || !guideType || !startedAt || isInteractionDisabled) {
+    if (!participantId || !guideType || !sessionNumber || !floorPlan || !startedAt || isInteractionDisabled) {
       return;
     }
 
@@ -178,7 +184,7 @@ export function ExperimentClient() {
 
     try {
       const { submissionId: savedId } = await submitExperiment({
-        experimentCode: DEFAULT_EXPERIMENT_CODE,
+        experimentCode: buildExperimentCode(floorPlan, sessionNumber),
         participantId,
         guideType,
         startedAt,
@@ -196,7 +202,7 @@ export function ExperimentClient() {
     }
   }
 
-  if (!participantId) {
+  if (!participantId || !floorPlan) {
     return <ParticipantIdForm onStart={handleStart} />;
   }
 
@@ -226,12 +232,15 @@ export function ExperimentClient() {
           <p className="text-sm text-slate-600">
             참가자 번호: <span className="font-semibold text-slate-900">{participantId}</span>
             {guideType ? <> · 가이드: <span className="font-semibold text-slate-900">{GUIDE_TYPE_LABELS[guideType]}</span></> : null}
+            {sessionNumber ? <> · 세션: <span className="font-semibold text-slate-900">{sessionNumber}</span></> : null}
+            <> · 평면도: <span className="font-semibold text-slate-900">{floorPlan}</span></>
           </p>
         </header>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <section aria-label="평면도 응답 입력" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
             <FloorPlanCanvas
+              floorPlan={floorPlan}
               markers={markers}
               isDisabled={isInteractionDisabled}
               onPlaceMarker={handlePlaceMarker}

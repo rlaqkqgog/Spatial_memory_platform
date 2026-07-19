@@ -17,6 +17,34 @@ export const GUIDE_TYPE_LABELS: Record<GuideType, string> = {
   NG: "가이드 없음(NG)",
 };
 
+export const SESSION_NUMBERS = ["S1", "S2", "S3"] as const;
+export type SessionNumber = (typeof SESSION_NUMBERS)[number];
+
+export const SESSION_NUMBER_LABELS: Record<SessionNumber, string> = {
+  S1: "세션 1 (S1)",
+  S2: "세션 2 (S2)",
+  S3: "세션 3 (S3)",
+};
+
+export const FLOOR_PLANS = ["FP1", "FP2"] as const;
+export type FloorPlan = (typeof FLOOR_PLANS)[number];
+
+export const FLOOR_PLAN_LABELS: Record<FloorPlan, string> = {
+  FP1: "평면도 1 (FP1)",
+  FP2: "평면도 2 (FP2)",
+};
+
+/** public 폴더의 평면도 이미지 경로입니다. 실제 도면 SVG로 교체해 사용합니다. */
+export const FLOOR_PLAN_IMAGES: Record<FloorPlan, string> = {
+  FP1: "/floor-plan-fp1.svg",
+  FP2: "/floor-plan-fp2.svg",
+};
+
+/** 평면도·세션 조합을 experimentCode(예: "FP1-S1")로 인코딩합니다. */
+export function buildExperimentCode(floorPlan: FloorPlan, sessionNumber: SessionNumber): string {
+  return `${floorPlan}-${sessionNumber}`;
+}
+
 export interface Marker {
   /** 브라우저에서 생성한 식별자입니다. 재시도 시 중복 저장을 막는 데도 사용합니다. */
   id: string;

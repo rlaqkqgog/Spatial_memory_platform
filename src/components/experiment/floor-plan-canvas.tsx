@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useRef, useState, type PointerEvent } from "react";
 
 import { clampNormalizedCoordinate } from "@/lib/markers";
-import type { Marker, MarkerColor } from "@/types/experiment";
+import { FLOOR_PLAN_IMAGES, type FloorPlan, type Marker, type MarkerColor } from "@/types/experiment";
 
 const MARKER_STYLE: Record<MarkerColor, string> = {
   red: "bg-red-500",
@@ -21,6 +21,7 @@ interface DragState {
 }
 
 interface FloorPlanCanvasProps {
+  floorPlan: FloorPlan;
   markers: Marker[];
   isDisabled: boolean;
   onPlaceMarker: (x: number, y: number) => void;
@@ -42,6 +43,7 @@ function getNormalizedCoordinates(
 }
 
 export function FloorPlanCanvas({
+  floorPlan,
   markers,
   isDisabled,
   onPlaceMarker,
@@ -130,10 +132,10 @@ export function FloorPlanCanvas({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
     >
-      {/* 실제 실험 평면도는 public/floor-plan.svg 파일로 교체할 수 있습니다. */}
+      {/* 실제 실험 도면은 public/floor-plan-fp1.svg, floor-plan-fp2.svg 파일로 교체합니다. */}
       <Image
-        src="/floor-plan-placeholder.svg"
-        alt="실험용 평면도 예시"
+        src={FLOOR_PLAN_IMAGES[floorPlan]}
+        alt={`실험용 평면도 ${floorPlan}`}
         fill
         sizes="(max-width: 1024px) 100vw, 75vw"
         className="pointer-events-none select-none object-cover"

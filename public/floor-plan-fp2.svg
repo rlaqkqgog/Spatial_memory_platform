@@ -1,0 +1,8 @@
+<svg width="1200" height="900" viewBox="0 0 1200 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="900" fill="#F8FAFC"/>
+  <rect x="85" y="90" width="1030" height="715" rx="6" stroke="#94A3B8" stroke-width="10"/>
+  <path d="M85 420H360V90M660 90V335H1115M830 335V805M360 610H830M360 610V805" stroke="#CBD5E1" stroke-width="8"/>
+  <path d="M360 490H520M660 230H800M830 555H1000" stroke="#E2E8F0" stroke-width="44"/>
+  <text x="600" y="455" text-anchor="middle" fill="#64748B" font-family="Arial, sans-serif" font-size="30">실험용 평면도 예시</text>
+  <text x="600" y="495" text-anchor="middle" fill="#94A3B8" font-family="Arial, sans-serif" font-size="20">실제 연구 평면도 이미지로 교체하세요</text>
+</svg>
