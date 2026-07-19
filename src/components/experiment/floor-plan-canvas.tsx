@@ -89,7 +89,7 @@ export function FloorPlanCanvas({
   const panRef = useRef<PanState | null>(null);
   const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null);
   const [isPanning, setIsPanning] = useState(false);
-  const [isSpaceHeld, setIsSpaceHeld] = useState(false);
+  const [isMoveMode, setIsMoveMode] = useState(false);
   const [imageAspect, setImageAspect] = useState<number | null>(null);
   const [viewportSize, setViewportSize] = useState<{ width: number; height: number } | null>(null);
   const [view, setView] = useState<ViewState>({ zoom: 1, offsetX: 0, offsetY: 0 });
@@ -101,46 +101,6 @@ export function FloorPlanCanvas({
     setImageAspect(null);
     setView({ zoom: 1, offsetX: 0, offsetY: 0 });
   }
-
-  // 스페이스바를 누르고 있는 동안 손바닥(팬) 모드로 전환합니다. 입력 필드에 타이핑 중일 때는 무시합니다.
-  useEffect(() => {
-    function isTypingTarget(target: EventTarget | null): boolean {
-      return (
-        target instanceof HTMLElement &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.tagName === "SELECT" ||
-          target.isContentEditable)
-      );
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.code !== "Space" || isTypingTarget(event.target)) {
-        return;
-      }
-      event.preventDefault();
-      setIsSpaceHeld(true);
-    }
-
-    function handleKeyUp(event: KeyboardEvent) {
-      if (event.code === "Space") {
-        setIsSpaceHeld(false);
-      }
-    }
-
-    function handleWindowBlur() {
-      setIsSpaceHeld(false);
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-    window.addEventListener("blur", handleWindowBlur);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-      window.removeEventListener("blur", handleWindowBlur);
-    };
-  }, []);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -237,7 +197,7 @@ export function FloorPlanCanvas({
 
   /** 클릭 이벤트 대신 pointerdown→pointerup 이동 거리로 배치를 판정해 팬 제스처와 확실히 구분합니다. */
   function placeMarkerAt(event: Pick<PointerEvent<HTMLDivElement>, "clientX" | "clientY">) {
-    if (isDisabled || isSpaceHeld) {
+    if (isDisabled || isMoveMode) {
       return;
     }
 
@@ -271,8 +231,8 @@ export function FloorPlanCanvas({
   }
 
   function handleMarkerPointerDown(event: PointerEvent<HTMLDivElement>, marker: Marker) {
-    // 스페이스 팬 모드에서는 마커를 잡지 않고 이벤트를 캔버스로 흘려 화면 이동만 하게 합니다.
-    if (isDisabled || isSpaceHeld) {
+    // 이동 모드에서는 마커를 잡지 않고 이벤트를 캔버스로 흘려 화면 이동만 하게 합니다.
+    if (isDisabled || isMoveMode) {
       return;
     }
 
@@ -318,10 +278,13 @@ export function FloorPlanCanvas({
     const deltaY = event.clientY - activePan.startClientY;
     if (!activePan.hasMoved && Math.hypot(deltaX, deltaY) > PAN_THRESHOLD_PX) {
       activePan.hasMoved = true;
-      setIsPanning(true);
+      if (isMoveMode) {
+        setIsPanning(true);
+      }
     }
 
-    if (activePan.hasMoved) {
+    // 이동 모드가 아닐 때는 드래그해도 화면을 움직이지 않고, 마커 오배치 방지용 이동 판정만 합니다.
+    if (activePan.hasMoved && isMoveMode) {
       setView((current) => ({
         ...current,
         offsetX: activePan.startOffsetX + deltaX,
@@ -396,7 +359,7 @@ export function FloorPlanCanvas({
 
   const cursorClass = isPanning
     ? "cursor-grabbing"
-    : isSpaceHeld
+    : isMoveMode
       ? "cursor-grab"
       : isDisabled
         ? "cursor-default"
@@ -405,8 +368,9 @@ export function FloorPlanCanvas({
   return (
     <div
       ref={viewportRef}
-      className={`relative h-[70vh] min-h-[420px] w-full touch-none overflow-hidden rounded-2xl border-2 border-slate-300 bg-slate-100 shadow-inner ${cursorClass}`}
-      aria-label="평면도. 클릭하여 마커를 배치하고, 드래그로 이동하고, 휠로 확대·축소합니다."
+      className={`relative h-[70vh] min-h-[420px] w-full touch-none select-none overflow-hidden rounded-2xl border-2 border-slate-300 bg-slate-100 shadow-inner ${cursorClass}`}
+      aria-label="평면도. 클릭하여 마커를 배치하고, 이동 버튼을 켜면 드래그로 화면을 이동합니다. 휠로 확대·축소합니다."
+      onDragStart={(event) => event.preventDefault()}
       onPointerDown={handleCanvasPointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -475,6 +439,19 @@ export function FloorPlanCanvas({
           className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-lg font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
         >
           −
+        </button>
+        <button
+          type="button"
+          aria-label="화면 이동 모드"
+          aria-pressed={isMoveMode}
+          onClick={() => setIsMoveMode((current) => !current)}
+          className={`flex h-9 w-9 items-center justify-center rounded-lg border text-xs font-semibold shadow-sm transition ${
+            isMoveMode
+              ? "border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700"
+              : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+          }`}
+        >
+          이동
         </button>
         <button
           type="button"
