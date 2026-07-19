@@ -1,4 +1,4 @@
-import type { ExperimentSubmission, IncidentalSubmission } from "@/types/experiment";
+import type { ExperimentSubmission, IncidentalRecognitionSubmission } from "@/types/experiment";
 
 interface SubmissionResponse {
   submissionId: string;
@@ -25,7 +25,9 @@ export async function submitExperiment(submission: ExperimentSubmission): Promis
   return postSubmission("/api/submissions", submission);
 }
 
-/** 본 응답 제출 후 우연객체 위치 응답을 저장합니다. */
-export async function submitIncidental(submission: IncidentalSubmission): Promise<SubmissionResponse> {
-  return postSubmission("/api/incidental-submissions", submission);
+/** 본 응답 제출 후 우연객체 재인(봤음/못 봤음) 응답을 저장합니다. */
+export async function submitIncidentalRecognition(
+  submission: IncidentalRecognitionSubmission,
+): Promise<SubmissionResponse> {
+  return postSubmission("/api/incidental-recognition", submission);
 }

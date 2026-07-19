@@ -4,12 +4,12 @@ import { useState } from "react";
 
 import { ColorSelector } from "@/components/experiment/color-selector";
 import { ExperimentInstructions } from "@/components/experiment/experiment-instructions";
-import { FloorPlanCanvas, type CanvasMarker } from "@/components/experiment/floor-plan-canvas";
-import { IncidentalObjectSelector } from "@/components/experiment/incidental-object-selector";
+import { FloorPlanCanvas } from "@/components/experiment/floor-plan-canvas";
+import { IncidentalRecognitionForm } from "@/components/experiment/incidental-recognition-form";
 import { MarkerProgress } from "@/components/experiment/marker-progress";
 import { ParticipantIdForm, type ExperimentSetup } from "@/components/experiment/participant-id-form";
 import { canPlaceMarker, getRemainingMarkersByColor } from "@/lib/markers";
-import { submitExperiment, submitIncidental } from "@/lib/submission-client";
+import { submitExperiment, submitIncidentalRecognition } from "@/lib/submission-client";
 import {
   buildExperimentCode,
   getIncidentalObjects,
@@ -18,8 +18,7 @@ import {
   type ExperimentEvent,
   type FloorPlan,
   type GuideType,
-  type IncidentalEvent,
-  type IncidentalMarker,
+  type IncidentalRecognitionResponse,
   type Marker,
   type MarkerColor,
   type SessionNumber,
@@ -45,30 +44,23 @@ export function ExperimentClient() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
 
-  // 2단계: 우연객체 위치 응답 상태입니다.
-  const [incidentalStartedAt, setIncidentalStartedAt] = useState<string | null>(null);
-  const [incidentalMarkers, setIncidentalMarkers] = useState<IncidentalMarker[]>([]);
-  const [incidentalEvents, setIncidentalEvents] = useState<IncidentalEvent[]>([]);
-  const [incidentalDeletedCount, setIncidentalDeletedCount] = useState(0);
-  const [activeObjectId, setActiveObjectId] = useState<string | null>(null);
-  const [incidentalSubmissionId, setIncidentalSubmissionId] = useState<string | null>(null);
+  // 2단계: 우연객체 재인(봤음/못 봤음) 검사 상태입니다.
+  const [recognitionStartedAt, setRecognitionStartedAt] = useState<string | null>(null);
+  const [recognitionAnswers, setRecognitionAnswers] = useState<Map<string, IncidentalRecognitionResponse>>(
+    new Map(),
+  );
+  const [recognitionSubmissionId, setRecognitionSubmissionId] = useState<string | null>(null);
 
   const remainingByColor = getRemainingMarkersByColor(markers);
   const isMainSubmitted = submissionId !== null;
-  const isIncidentalSubmitted = incidentalSubmissionId !== null;
+  const isRecognitionSubmitted = recognitionSubmissionId !== null;
   const isInteractionDisabled = isSubmitting || isMainSubmitted;
-  const isIncidentalDisabled = isSubmitting || isIncidentalSubmitted;
+  const isRecognitionDisabled = isSubmitting || isRecognitionSubmitted;
 
-  const incidentalObjects =
-    floorPlan && sessionNumber ? getIncidentalObjects(floorPlan, sessionNumber) : [];
-  const placedObjectIds = new Set(incidentalMarkers.map((marker) => marker.objectId));
+  const incidentalObjects = sessionNumber ? getIncidentalObjects(sessionNumber) : [];
 
   function appendEvent(event: ExperimentEvent) {
     setEvents((currentEvents) => [...currentEvents, event]);
-  }
-
-  function appendIncidentalEvent(event: IncidentalEvent) {
-    setIncidentalEvents((currentEvents) => [...currentEvents, event]);
   }
 
   function handleStart(setup: ExperimentSetup) {
@@ -217,12 +209,9 @@ export function ExperimentClient() {
       });
       setSubmissionId(savedId);
 
-      // 2단계(우연객체) 응답을 시작합니다.
-      const incidentalStarted = now();
-      setIncidentalStartedAt(incidentalStarted);
-      setIncidentalEvents([{ type: "start", occurredAt: incidentalStarted }]);
-      const objects = getIncidentalObjects(floorPlan, sessionNumber);
-      setActiveObjectId(objects[0]?.id ?? null);
+      // 2단계(우연객체 재인 검사)를 시작합니다.
+      setRecognitionStartedAt(now());
+      setRecognitionAnswers(new Map());
     } catch (error) {
       const message = error instanceof Error ? error.message : "응답을 저장하지 못했습니다.";
       setNotice({ kind: "error", message });
@@ -231,179 +220,70 @@ export function ExperimentClient() {
     }
   }
 
-  function handleObjectSelect(objectId: string) {
-    if (isIncidentalDisabled) {
+  function handleRecognitionAnswer(objectId: string, seen: boolean) {
+    if (isRecognitionDisabled) {
       return;
     }
 
-    setActiveObjectId(objectId);
-    appendIncidentalEvent({ type: "object_select", objectId, occurredAt: now() });
-    setNotice(null);
-  }
+    setRecognitionAnswers((currentAnswers) => {
+      const nextAnswers = new Map(currentAnswers);
+      const existing = nextAnswers.get(objectId);
 
-  function advanceToNextUnplacedObject(justPlacedObjectId: string) {
-    const placedNow = new Set(incidentalMarkers.map((marker) => marker.objectId));
-    placedNow.add(justPlacedObjectId);
-    const nextObject = incidentalObjects.find((objectDef) => !placedNow.has(objectDef.id));
-    setActiveObjectId(nextObject?.id ?? null);
-  }
+      if (existing && existing.seen === seen) {
+        return currentAnswers;
+      }
 
-  function handleIncidentalPlace(x: number, y: number) {
-    if (isIncidentalDisabled) {
-      return;
-    }
-
-    if (!activeObjectId) {
-      setNotice({ kind: "error", message: "먼저 오른쪽 목록에서 우연객체를 선택해 주세요." });
-      return;
-    }
-
-    if (placedObjectIds.has(activeObjectId)) {
-      setNotice({
-        kind: "error",
-        message: "이 객체는 이미 배치되어 있습니다. 마커를 드래그해 옮기거나 × 버튼으로 삭제한 뒤 다시 배치하세요.",
+      nextAnswers.set(objectId, {
+        objectId,
+        seen,
+        answeredAt: now(),
+        changeCount: existing ? existing.changeCount + 1 : 0,
       });
-      return;
-    }
-
-    const placedAt = now();
-    const marker: IncidentalMarker = {
-      id: crypto.randomUUID(),
-      objectId: activeObjectId,
-      x,
-      y,
-      placedAt,
-      moveCount: 0,
-    };
-
-    setIncidentalMarkers((currentMarkers) => [...currentMarkers, marker]);
-    appendIncidentalEvent({
-      type: "marker_place",
-      markerId: marker.id,
-      objectId: marker.objectId,
-      x,
-      y,
-      occurredAt: placedAt,
+      return nextAnswers;
     });
-    advanceToNextUnplacedObject(activeObjectId);
     setNotice(null);
   }
 
-  function handleIncidentalPositionChange(markerId: string, x: number, y: number, commit: boolean) {
-    if (isIncidentalDisabled) {
-      return;
-    }
-
-    const movedMarker = incidentalMarkers.find((marker) => marker.id === markerId);
-    if (!movedMarker) {
-      return;
-    }
-
-    setIncidentalMarkers((currentMarkers) =>
-      currentMarkers.map((marker) =>
-        marker.id === markerId
-          ? { ...marker, x, y, moveCount: marker.moveCount + (commit ? 1 : 0) }
-          : marker,
-      ),
-    );
-
-    if (commit) {
-      appendIncidentalEvent({ type: "marker_move", markerId, objectId: movedMarker.objectId, x, y, occurredAt: now() });
-    }
-  }
-
-  function handleIncidentalDelete(markerId: string) {
-    if (isIncidentalDisabled) {
-      return;
-    }
-
-    const deletedMarker = incidentalMarkers.find((marker) => marker.id === markerId);
-    if (!deletedMarker) {
-      return;
-    }
-
-    setIncidentalMarkers((currentMarkers) => currentMarkers.filter((marker) => marker.id !== markerId));
-    setIncidentalDeletedCount((count) => count + 1);
-    appendIncidentalEvent({
-      type: "marker_delete",
-      markerId,
-      objectId: deletedMarker.objectId,
-      x: deletedMarker.x,
-      y: deletedMarker.y,
-      occurredAt: now(),
-    });
-    // 삭제한 객체를 다시 배치할 수 있게 활성 객체로 되돌립니다.
-    setActiveObjectId(deletedMarker.objectId);
-  }
-
-  function handleIncidentalReset() {
-    if (isIncidentalDisabled || incidentalMarkers.length === 0) {
-      return;
-    }
-
-    if (!window.confirm("입력한 우연객체 마커를 모두 지울까요? 이 작업은 되돌릴 수 없습니다.")) {
-      return;
-    }
-
-    const deletedAt = now();
-    setIncidentalDeletedCount((count) => count + incidentalMarkers.length);
-    setIncidentalEvents((currentEvents) => [
-      ...currentEvents,
-      ...incidentalMarkers.map((marker) => ({
-        type: "marker_delete" as const,
-        markerId: marker.id,
-        objectId: marker.objectId,
-        x: marker.x,
-        y: marker.y,
-        occurredAt: deletedAt,
-      })),
-    ]);
-    setIncidentalMarkers([]);
-    setActiveObjectId(incidentalObjects[0]?.id ?? null);
-    setNotice({ kind: "info", message: "모든 우연객체 마커를 초기화했습니다." });
-  }
-
-  async function handleIncidentalSubmit() {
+  async function handleRecognitionSubmit() {
     if (
       !participantId ||
       !guideType ||
       !sessionNumber ||
       !floorPlan ||
-      !incidentalStartedAt ||
+      !recognitionStartedAt ||
       !submissionId ||
-      isIncidentalDisabled
+      isRecognitionDisabled
     ) {
       return;
     }
 
-    if (incidentalMarkers.length !== incidentalObjects.length) {
+    if (recognitionAnswers.size !== incidentalObjects.length) {
       setNotice({
         kind: "error",
-        message: `제출하려면 우연객체 ${incidentalObjects.length}개의 위치를 모두 입력해야 합니다.`,
+        message: `제출하려면 ${incidentalObjects.length}개 물건 모두에 답해야 합니다. (현재 ${recognitionAnswers.size}개)`,
       });
       return;
     }
 
-    const submittedAt = now();
-    const submitEvent: IncidentalEvent = { type: "submit", occurredAt: submittedAt };
-    const submissionEvents = [...incidentalEvents, submitEvent];
-    setIncidentalEvents(submissionEvents);
+    // 화면 표시 순서대로 정렬해 전송합니다.
+    const responses = incidentalObjects
+      .map((objectDef) => recognitionAnswers.get(objectDef.id))
+      .filter((response): response is IncidentalRecognitionResponse => response !== undefined);
+
     setIsSubmitting(true);
     setNotice(null);
 
     try {
-      const { submissionId: savedId } = await submitIncidental({
+      const { submissionId: savedId } = await submitIncidentalRecognition({
         experimentCode: buildExperimentCode(floorPlan, sessionNumber),
         participantId,
         guideType,
         mainSubmissionId: submissionId,
-        startedAt: incidentalStartedAt,
-        submittedAt,
-        deletedMarkerCount: incidentalDeletedCount,
-        markers: incidentalMarkers,
-        events: submissionEvents,
+        startedAt: recognitionStartedAt,
+        submittedAt: now(),
+        responses,
       });
-      setIncidentalSubmissionId(savedId);
+      setRecognitionSubmissionId(savedId);
     } catch (error) {
       const message = error instanceof Error ? error.message : "응답을 저장하지 못했습니다.";
       setNotice({ kind: "error", message });
@@ -416,7 +296,7 @@ export function ExperimentClient() {
     return <ParticipantIdForm onStart={handleStart} />;
   }
 
-  if (isMainSubmitted && isIncidentalSubmitted) {
+  if (isMainSubmitted && isRecognitionSubmitted) {
     return (
       <main className="mx-auto flex min-h-screen max-w-xl items-center px-5 py-10">
         <section className="w-full rounded-3xl border border-emerald-200 bg-white p-8 text-center shadow-sm">
@@ -426,133 +306,132 @@ export function ExperimentClient() {
             연구자의 다음 안내를 기다려 주세요. 제출된 응답은 더 이상 수정할 수 없습니다.
           </p>
           <p className="mt-5 text-xs text-slate-400">본 응답 저장 번호: {submissionId}</p>
-          <p className="mt-1 text-xs text-slate-400">우연객체 저장 번호: {incidentalSubmissionId}</p>
+          <p className="mt-1 text-xs text-slate-400">우연객체 저장 번호: {recognitionSubmissionId}</p>
         </section>
       </main>
     );
   }
 
-  const isIncidentalPhase = isMainSubmitted;
-  const headerBadge = isIncidentalPhase ? "2단계 · 우연객체 위치" : "1단계 · 위치 응답";
-  const activeObject = incidentalObjects.find((objectDef) => objectDef.id === activeObjectId) ?? null;
+  const headerLine = (
+    <p className="text-sm text-slate-600">
+      참가자 번호: <span className="font-semibold text-slate-900">{participantId}</span>
+      {guideType ? <> · 가이드: <span className="font-semibold text-slate-900">{GUIDE_TYPE_LABELS[guideType]}</span></> : null}
+      {sessionNumber ? <> · 세션: <span className="font-semibold text-slate-900">{sessionNumber}</span></> : null}
+      <> · 평면도: <span className="font-semibold text-slate-900">{floorPlan}</span></>
+    </p>
+  );
 
-  const canvasMarkers: CanvasMarker[] = isIncidentalPhase
-    ? incidentalMarkers.map((marker) => {
-        const objectIndex = incidentalObjects.findIndex((objectDef) => objectDef.id === marker.objectId);
-        const objectDef = objectIndex >= 0 ? incidentalObjects[objectIndex] : null;
-        return {
-          id: marker.id,
-          color: "incidental",
-          x: marker.x,
-          y: marker.y,
-          badge: objectIndex >= 0 ? String(objectIndex + 1) : "?",
-          label: objectDef?.label ?? marker.objectId,
-        };
-      })
-    : markers;
+  const noticeBox = notice ? (
+    <p
+      role={notice.kind === "error" ? "alert" : "status"}
+      className={`rounded-xl px-4 py-3 text-sm ${
+        notice.kind === "error" ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"
+      }`}
+    >
+      {notice.message}
+    </p>
+  ) : null;
+
+  // 2단계: 우연객체 재인(봤음/못 봤음) 검사 화면입니다.
+  if (isMainSubmitted) {
+    return (
+      <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl">
+          <header className="mb-6 flex flex-col justify-between gap-3 border-b border-slate-200 pb-5 sm:flex-row sm:items-end">
+            <div>
+              <p className="text-sm font-semibold tracking-wide text-indigo-600">공간기억 연구 · 2단계</p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">우연객체 확인</h1>
+            </div>
+            {headerLine}
+          </header>
+
+          <section className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm">
+            <p className="text-sm leading-6 text-indigo-900">
+              아래 물건들 중 일부는 방금 체험한 공간에 실제로 있었고, 일부는 없었습니다. 각 물건을{" "}
+              <span className="font-semibold">본 적이 있는지</span> 선택해 주세요. 위치는 기억하지 않아도 됩니다.
+            </p>
+          </section>
+
+          <IncidentalRecognitionForm
+            objects={incidentalObjects}
+            answers={new Map([...recognitionAnswers].map(([objectId, response]) => [objectId, response.seen]))}
+            isDisabled={isRecognitionDisabled}
+            onAnswer={handleRecognitionAnswer}
+          />
+
+          <div className="mt-4 space-y-4">
+            {noticeBox}
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm text-slate-600">
+                응답 현황: <span className="font-semibold text-slate-900">{recognitionAnswers.size}</span> /{" "}
+                {incidentalObjects.length}
+              </p>
+              <button
+                type="button"
+                disabled={isRecognitionDisabled}
+                onClick={handleRecognitionSubmit}
+                className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSubmitting ? "저장 중…" : "제출"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <header className="mb-6 flex flex-col justify-between gap-3 border-b border-slate-200 pb-5 sm:flex-row sm:items-end">
           <div>
-            <p className="text-sm font-semibold tracking-wide text-indigo-600">공간기억 연구 · {headerBadge}</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
-              {isIncidentalPhase ? "우연객체 위치 입력" : "위치 응답 입력"}
-            </h1>
+            <p className="text-sm font-semibold tracking-wide text-indigo-600">공간기억 연구 · 1단계</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">위치 응답 입력</h1>
           </div>
-          <p className="text-sm text-slate-600">
-            참가자 번호: <span className="font-semibold text-slate-900">{participantId}</span>
-            {guideType ? <> · 가이드: <span className="font-semibold text-slate-900">{GUIDE_TYPE_LABELS[guideType]}</span></> : null}
-            {sessionNumber ? <> · 세션: <span className="font-semibold text-slate-900">{sessionNumber}</span></> : null}
-            <> · 평면도: <span className="font-semibold text-slate-900">{floorPlan}</span></>
-          </p>
+          {headerLine}
         </header>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <section
-            aria-label={isIncidentalPhase ? "우연객체 위치 입력" : "평면도 응답 입력"}
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"
-          >
+          <section aria-label="평면도 응답 입력" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
             <FloorPlanCanvas
               floorPlan={floorPlan}
-              markers={canvasMarkers}
-              isDisabled={isIncidentalPhase ? isIncidentalDisabled : isInteractionDisabled}
-              onPlaceMarker={isIncidentalPhase ? handleIncidentalPlace : handlePlaceMarker}
-              onDeleteMarker={isIncidentalPhase ? handleIncidentalDelete : handleDeleteMarker}
-              onMarkerPositionChange={isIncidentalPhase ? handleIncidentalPositionChange : handleMarkerPositionChange}
+              markers={markers}
+              isDisabled={isInteractionDisabled}
+              onPlaceMarker={handlePlaceMarker}
+              onDeleteMarker={handleDeleteMarker}
+              onMarkerPositionChange={handleMarkerPositionChange}
             />
             <p className="mt-3 text-sm text-slate-500">
-              {isIncidentalPhase
-                ? activeObject
-                  ? `지금 배치할 객체: ${activeObject.label} — 기억나는 위치를 클릭하세요. 이동 버튼으로 화면을 움직일 수 있습니다.`
-                  : "모든 우연객체를 배치했습니다. 위치를 확인한 뒤 제출해 주세요."
-                : "이동 버튼을 켜고 드래그하면 평면도가 이동하고, 휠로 확대·축소할 수 있습니다. 이동 버튼을 끄고 빈 위치를 클릭해 선택한 색상의 마커를 배치하세요."}
+              이동 버튼을 켜고 드래그하면 평면도가 이동하고, 휠로 확대·축소할 수 있습니다. 이동 버튼을 끄고 빈
+              위치를 클릭해 선택한 색상의 마커를 배치하세요.
             </p>
           </section>
 
           <aside className="space-y-4">
-            {isIncidentalPhase ? (
-              <>
-                <section className="rounded-2xl border border-violet-200 bg-violet-50 p-5 shadow-sm">
-                  <h2 className="text-sm font-semibold text-violet-900">우연객체 위치 회상</h2>
-                  <p className="mt-1 text-xs leading-5 text-violet-800">
-                    체험 중 우연히 본 물건들입니다. 각 물건이 있던 위치를 평면도에 표시해 주세요. 기억이 확실하지
-                    않아도 가장 가깝다고 생각하는 위치를 선택하면 됩니다.
-                  </p>
-                </section>
-                <IncidentalObjectSelector
-                  objects={incidentalObjects}
-                  activeObjectId={activeObjectId}
-                  placedObjectIds={placedObjectIds}
-                  isDisabled={isIncidentalDisabled}
-                  onSelect={handleObjectSelect}
-                />
-                <p className="rounded-xl bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
-                  입력 현황: <span className="font-semibold text-slate-900">{incidentalMarkers.length}</span> /{" "}
-                  {incidentalObjects.length}
-                </p>
-              </>
-            ) : (
-              <>
-                <ExperimentInstructions />
-                <ColorSelector
-                  activeColor={activeColor}
-                  remainingByColor={remainingByColor}
-                  onSelect={handleColorSelect}
-                />
-                <MarkerProgress remainingByColor={remainingByColor} placedCount={markers.length} />
-              </>
-            )}
+            <ExperimentInstructions />
+            <ColorSelector
+              activeColor={activeColor}
+              remainingByColor={remainingByColor}
+              onSelect={handleColorSelect}
+            />
+            <MarkerProgress remainingByColor={remainingByColor} placedCount={markers.length} />
 
-            {notice ? (
-              <p
-                role={notice.kind === "error" ? "alert" : "status"}
-                className={`rounded-xl px-4 py-3 text-sm ${
-                  notice.kind === "error" ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"
-                }`}
-              >
-                {notice.message}
-              </p>
-            ) : null}
+            {noticeBox}
 
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                disabled={
-                  isIncidentalPhase
-                    ? isIncidentalDisabled || incidentalMarkers.length === 0
-                    : isInteractionDisabled || markers.length === 0
-                }
-                onClick={isIncidentalPhase ? handleIncidentalReset : handleReset}
+                disabled={isInteractionDisabled || markers.length === 0}
+                onClick={handleReset}
                 className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 전체 초기화
               </button>
               <button
                 type="button"
-                disabled={isIncidentalPhase ? isIncidentalDisabled : isInteractionDisabled}
-                onClick={isIncidentalPhase ? handleIncidentalSubmit : handleSubmit}
+                disabled={isInteractionDisabled}
+                onClick={handleSubmit}
                 className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSubmitting ? "저장 중…" : "제출"}

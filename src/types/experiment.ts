@@ -46,93 +46,76 @@ export function buildExperimentCode(floorPlan: FloorPlan, sessionNumber: Session
 }
 
 export interface IncidentalObjectDef {
-  /** Unity 기기 스냅샷(fp*_incidental_anchor_sets.json)의 object_id와 동일한 값입니다. */
+  /**
+   * 실제 배치된 객체는 Unity 기기 스냅샷(fp*_incidental_anchor_sets.json)의 object_id와 동일한 값이고,
+   * 배치되지 않은(미출현) 객체는 incidental_extra_* 형식입니다.
+   */
   id: string;
   label: string;
+  /** 해당 세션에서 실제로 공간에 배치되었던 객체인지(재인 검사의 정답) 여부입니다. */
+  wasPresent: boolean;
 }
 
 /**
- * 세션별 우연객체(incidental object) 목록입니다.
- * FP2 세트는 아직 authoring 전이므로 자리표시자입니다. 확정되면 실제 object_id·이름으로 교체하세요.
+ * 세션별 우연객체(incidental object) 재인 검사 목록입니다. 세션마다 실제 배치 5개 + 미출현 5개, 총 10개입니다.
+ * 목록 순서는 화면 표시 순서와 동일합니다. FP1·FP2가 같은 세션 목록을 공유합니다.
  */
-export const INCIDENTAL_OBJECT_SETS: Record<string, IncidentalObjectDef[]> = {
-  "FP1-S1": [
-    { id: "incidental_01_01_birdcage_open", label: "새장 (Birdcage)" },
-    { id: "incidental_02_02_bowlingBall", label: "볼링공 (Bowling ball)" },
-    { id: "incidental_03_03_iron", label: "다리미 (Iron)" },
-    { id: "incidental_04_04_pot", label: "냄비 (Pot)" },
-    { id: "incidental_05_05_watering_can", label: "물뿌리개 (Watering can)" },
+export const INCIDENTAL_OBJECT_SETS: Record<SessionNumber, IncidentalObjectDef[]> = {
+  S1: [
+    { id: "incidental_04_04_pot", label: "냄비", wasPresent: true },
+    { id: "incidental_extra_fryingPan", label: "프라이팬", wasPresent: false },
+    { id: "incidental_extra_shovel", label: "삽", wasPresent: false },
+    { id: "incidental_extra_radio", label: "라디오", wasPresent: false },
+    { id: "incidental_extra_candle", label: "양초", wasPresent: false },
+    { id: "incidental_extra_ukulele", label: "우쿨렐레", wasPresent: false },
+    { id: "incidental_03_03_iron", label: "다리미", wasPresent: true },
+    { id: "incidental_02_02_bowlingBall", label: "볼링공", wasPresent: true },
+    { id: "incidental_05_05_watering_can", label: "물뿌리개", wasPresent: true },
+    { id: "incidental_01_01_birdcage_open", label: "새장", wasPresent: true },
   ],
-  "FP1-S2": [
-    { id: "incidental_01_01_drill", label: "드릴 (Drill)" },
-    { id: "incidental_02_02_jar", label: "유리병 (Jar)" },
-    { id: "incidental_03_03_kettle", label: "주전자 (Kettle)" },
-    { id: "incidental_04_04_lantern", label: "랜턴 (Lantern)" },
-    { id: "incidental_05_05_sewingMachin", label: "재봉틀 (Sewing machine)" },
+  S2: [
+    { id: "incidental_extra_telephone", label: "전화기", wasPresent: false },
+    { id: "incidental_extra_balanceScale", label: "양팔저울", wasPresent: false },
+    { id: "incidental_01_01_drill", label: "전동드릴", wasPresent: true },
+    { id: "incidental_05_05_sewingMachin", label: "재봉틀", wasPresent: true },
+    { id: "incidental_04_04_lantern", label: "랜턴", wasPresent: true },
+    { id: "incidental_extra_safetyHelmet", label: "안전모", wasPresent: false },
+    { id: "incidental_03_03_kettle", label: "주전자", wasPresent: true },
+    { id: "incidental_extra_sickle", label: "낫", wasPresent: false },
+    { id: "incidental_02_02_jar", label: "항아리", wasPresent: true },
+    { id: "incidental_extra_toaster", label: "토스터기", wasPresent: false },
   ],
-  "FP1-S3": [
-    { id: "incidental_01_01_Globe", label: "지구본 (Globe)" },
-    { id: "incidental_02_02_hairDryer", label: "헤어드라이어 (Hair dryer)" },
-    { id: "incidental_03_03_heamer", label: "망치 (Hammer)" },
-    { id: "incidental_04_04_riceCooker", label: "밥솥 (Rice cooker)" },
-    { id: "incidental_05_05_sandClock", label: "모래시계 (Sand clock)" },
-  ],
-  "FP2-S1": [
-    { id: "fp2_s1_incidental_01", label: "우연객체 1" },
-    { id: "fp2_s1_incidental_02", label: "우연객체 2" },
-    { id: "fp2_s1_incidental_03", label: "우연객체 3" },
-    { id: "fp2_s1_incidental_04", label: "우연객체 4" },
-    { id: "fp2_s1_incidental_05", label: "우연객체 5" },
-  ],
-  "FP2-S2": [
-    { id: "fp2_s2_incidental_01", label: "우연객체 1" },
-    { id: "fp2_s2_incidental_02", label: "우연객체 2" },
-    { id: "fp2_s2_incidental_03", label: "우연객체 3" },
-    { id: "fp2_s2_incidental_04", label: "우연객체 4" },
-    { id: "fp2_s2_incidental_05", label: "우연객체 5" },
-  ],
-  "FP2-S3": [
-    { id: "fp2_s3_incidental_01", label: "우연객체 1" },
-    { id: "fp2_s3_incidental_02", label: "우연객체 2" },
-    { id: "fp2_s3_incidental_03", label: "우연객체 3" },
-    { id: "fp2_s3_incidental_04", label: "우연객체 4" },
-    { id: "fp2_s3_incidental_05", label: "우연객체 5" },
+  S3: [
+    { id: "incidental_extra_turntable", label: "턴테이블", wasPresent: false },
+    { id: "incidental_extra_telescope", label: "망원경", wasPresent: false },
+    { id: "incidental_extra_blender", label: "믹서기", wasPresent: false },
+    { id: "incidental_05_05_sandClock", label: "모래시계", wasPresent: true },
+    { id: "incidental_02_02_hairDryer", label: "헤어드라이기", wasPresent: true },
+    { id: "incidental_04_04_riceCooker", label: "전기밥솥", wasPresent: true },
+    { id: "incidental_extra_paintRoller", label: "페인트 롤러", wasPresent: false },
+    { id: "incidental_03_03_heamer", label: "망치", wasPresent: true },
+    { id: "incidental_extra_trophy", label: "트로피", wasPresent: false },
+    { id: "incidental_01_01_Globe", label: "지구본", wasPresent: true },
   ],
 };
 
-export function getIncidentalObjects(floorPlan: FloorPlan, sessionNumber: SessionNumber): IncidentalObjectDef[] {
-  return INCIDENTAL_OBJECT_SETS[buildExperimentCode(floorPlan, sessionNumber)] ?? [];
+export function getIncidentalObjects(sessionNumber: SessionNumber): IncidentalObjectDef[] {
+  return INCIDENTAL_OBJECT_SETS[sessionNumber] ?? [];
 }
 
-export interface IncidentalMarker {
-  id: string;
+/** 우연객체 하나에 대한 봤음/못 봤음 응답입니다. */
+export interface IncidentalRecognitionResponse {
   objectId: string;
-  /** 평면도 기준 정규화 좌표(0~1)입니다. */
-  x: number;
-  y: number;
-  placedAt: string;
-  moveCount: number;
+  /** 참가자가 "봤음"을 선택했으면 true입니다. */
+  seen: boolean;
+  /** 마지막으로 답을 선택(또는 변경)한 시각입니다. */
+  answeredAt: string;
+  /** 답을 바꾼 횟수입니다. 처음 선택은 0입니다. */
+  changeCount: number;
 }
 
-export type IncidentalEventType =
-  | "start"
-  | "object_select"
-  | "marker_place"
-  | "marker_move"
-  | "marker_delete"
-  | "submit";
-
-export interface IncidentalEvent {
-  type: IncidentalEventType;
-  occurredAt: string;
-  markerId?: string;
-  objectId?: string;
-  x?: number;
-  y?: number;
-}
-
-/** 본 응답 제출 후 이어지는 우연객체 위치 응답입니다. */
-export interface IncidentalSubmission {
+/** 본 응답 제출 후 이어지는 우연객체 재인 검사 응답입니다. */
+export interface IncidentalRecognitionSubmission {
   experimentCode: string;
   participantId: string;
   guideType: GuideType;
@@ -140,9 +123,7 @@ export interface IncidentalSubmission {
   mainSubmissionId: string;
   startedAt: string;
   submittedAt: string;
-  deletedMarkerCount: number;
-  markers: IncidentalMarker[];
-  events: IncidentalEvent[];
+  responses: IncidentalRecognitionResponse[];
 }
 
 export interface Marker {
