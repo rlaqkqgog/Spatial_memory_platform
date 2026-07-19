@@ -220,11 +220,19 @@ export function ParticipantList({ submissions: initialSubmissions, scores }: Par
                 <td className="whitespace-nowrap px-5 py-4">{formatDuration(submission.duration_ms)}</td>
                 <td className="whitespace-nowrap px-5 py-4">{submission.deleted_marker_count}</td>
                 <td className="whitespace-nowrap px-5 py-4">
-                  <DeleteButton
-                    submissionId={submission.id}
-                    participantId={submission.participant_id}
-                    onDeleted={() => setSubmissions((rows) => rows.filter((row) => row.id !== submission.id))}
-                  />
+                  <span className="flex items-center gap-2">
+                    <a
+                      href={`/api/admin/submissions/${submission.id}/csv`}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      CSV
+                    </a>
+                    <DeleteButton
+                      submissionId={submission.id}
+                      participantId={submission.participant_id}
+                      onDeleted={() => setSubmissions((rows) => rows.filter((row) => row.id !== submission.id))}
+                    />
+                  </span>
                 </td>
               </tr>
             ))}

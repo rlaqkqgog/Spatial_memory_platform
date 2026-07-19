@@ -284,6 +284,102 @@ interface PlanMarker {
 /** 채점에 필요한 정답 스톤의 최소 정보입니다. */
 export type ScoringStone = { color: MarkerColor; world_x: number; world_z: number };
 
+/** 정답 CSV(spawned_object_answer_key.csv)와 동일한 컬럼 순서입니다. */
+export const PARTICIPANT_CSV_HEADER = [
+  "sessionId",
+  "participantId",
+  "setId",
+  "guideMode",
+  "objectCategory",
+  "objectId",
+  "color",
+  "roomId",
+  "roomUuid",
+  "sourceMode",
+  "prefab",
+  "x",
+  "y",
+  "z",
+  "spawnTimeSeconds",
+] as const;
+
+const COLOR_CAPITAL: Record<MarkerColor, string> = {
+  red: "Red",
+  blue: "Blue",
+  green: "Green",
+  yellow: "Yellow",
+};
+
+export interface SubmissionCsvEntry {
+  participantId: string;
+  floorPlan: FloorPlan;
+  sessionNumber: SessionNumber | null;
+  guideType: string;
+  markers: { color: MarkerColor; x: number; y: number }[];
+  /** 있으면 월드 좌표로 변환, 없으면 평면도 정규화 좌표를 그대로 내보냅니다. */
+  transform: PlanToWorldTransform | null;
+}
+
+function csvField(value: string | number): string {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+/**
+ * 참가자 위치 응답을 정답 CSV와 같은 형식으로 만듭니다.
+ * 캘리브레이션이 있으면 x/z에 월드 좌표(sourceMode=WORLD)를, 없으면 평면도 정규화 좌표(sourceMode=PLAN)를 넣습니다.
+ */
+export function buildSubmissionCsv(entries: SubmissionCsvEntry[]): string {
+  const lines: string[] = [PARTICIPANT_CSV_HEADER.map((field) => csvField(field)).join(",")];
+
+  for (const entry of entries) {
+    const setId = `${entry.floorPlan}-${entry.sessionNumber ?? "UNMATCHED"}`;
+    const sessionId = `${entry.participantId}_${setId}_${entry.guideType}`;
+
+    for (const color of MARKER_COLORS) {
+      const colorMarkers = entry.markers.filter((marker) => marker.color === color);
+      colorMarkers.forEach((marker, index) => {
+        let x: number;
+        let z: number;
+        let sourceMode: string;
+        if (entry.transform) {
+          const world = planToWorld(entry.transform, marker.x, marker.y);
+          x = world.x;
+          z = world.z;
+          sourceMode = "WORLD";
+        } else {
+          x = marker.x;
+          z = marker.y;
+          sourceMode = "PLAN";
+        }
+
+        lines.push(
+          [
+            sessionId,
+            entry.participantId,
+            setId,
+            entry.guideType,
+            "stone",
+            `${color}_${index + 1}`,
+            COLOR_CAPITAL[color],
+            "",
+            "",
+            sourceMode,
+            "",
+            x,
+            "",
+            z,
+            "",
+          ]
+            .map((field) => csvField(field))
+            .join(","),
+        );
+      });
+    }
+  }
+
+  return `${lines.join("\r\n")}\r\n`;
+}
+
 /** 3개 이하 원소의 최소비용 완전매칭을 순열 전수로 구합니다. */
 function bestMatchingDistances(costs: number[][]): number[] {
   const n = costs.length;

@@ -60,6 +60,14 @@ export default async function AdminPage() {
             <p className="mt-2 text-sm text-slate-600">제출이 완료된 응답만 표시합니다.</p>
           </div>
           <div className="flex items-center gap-4">
+            {/* API 라우트에서 파일을 내려받는 링크이므로 next/link가 아니라 a 태그를 사용합니다. */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a
+              href="/api/admin/submissions/csv"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              전체 CSV 다운로드
+            </a>
             <Link
               href="/admin/answer-keys"
               className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
