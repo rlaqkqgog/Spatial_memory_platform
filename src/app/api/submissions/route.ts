@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 
 import { createSupabaseAdminClient, getSupabaseAdminConfig } from "@/lib/supabase-admin";
-import { GUIDE_TYPES, MARKER_COLORS, TOTAL_MARKERS, type ExperimentEventType, type ExperimentSubmission } from "@/types/experiment";
+import {
+  FLOOR_PLANS,
+  GUIDE_TYPES,
+  isValidExperimentDate,
+  MARKER_COLORS,
+  TOTAL_MARKERS,
+  type ExperimentEventType,
+  type ExperimentSubmission,
+} from "@/types/experiment";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EVENT_TYPES = new Set<ExperimentEventType>([
@@ -71,11 +79,11 @@ function isValidSubmission(value: unknown): value is ExperimentSubmission {
 
   if (
     typeof value.experimentCode !== "string" ||
-    value.experimentCode.trim().length === 0 ||
-    value.experimentCode.length > 100 ||
+    !FLOOR_PLANS.includes(value.experimentCode as (typeof FLOOR_PLANS)[number]) ||
     typeof value.participantId !== "string" ||
     value.participantId.trim().length < 2 ||
     value.participantId.length > 100 ||
+    !isValidExperimentDate(value.experimentDate) ||
     !isGuideType(value.guideType) ||
     !isValidDate(value.startedAt) ||
     !isValidDate(value.submittedAt) ||
@@ -173,6 +181,7 @@ export async function POST(request: Request) {
   const { data: submissionId, error } = await supabase.rpc("record_experiment_submission", {
     p_experiment_code: body.experimentCode.trim(),
     p_participant_id: body.participantId.trim(),
+    p_experiment_date: body.experimentDate,
     p_guide_type: body.guideType,
     p_started_at: body.startedAt,
     p_submitted_at: body.submittedAt,

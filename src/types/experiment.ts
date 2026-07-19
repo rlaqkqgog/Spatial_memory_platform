@@ -155,14 +155,33 @@ export interface ExperimentEvent {
   y?: number;
 }
 
-/** 서버 API로 전송하는, 제출이 완료된 한 번의 실험 응답입니다. */
+/**
+ * 서버 API로 전송하는, 제출이 완료된 한 가이드 조건의 위치 응답입니다.
+ * 한 참가자는 AAG·VG·NG 세 가이드에 대해 각각 하나씩, 총 3개를 제출합니다.
+ * 세션(S1~S3)은 제출 시점에는 알 수 없어 비워두고 관리자 페이지에서 매칭합니다.
+ */
 export interface ExperimentSubmission {
+  /** 평면도 식별자입니다(FP1/FP2). 세션은 저장하지 않고 관리자가 매칭합니다. */
   experimentCode: string;
   participantId: string;
+  /** 대면 실험 날짜(YYYY-MM-DD)입니다. */
+  experimentDate: string;
   guideType: GuideType;
   startedAt: string;
   submittedAt: string;
   deletedMarkerCount: number;
   markers: Marker[];
   events: ExperimentEvent[];
+}
+
+/** 입력 화면에서 참가자가 처음 입력하는 값입니다. */
+export interface ExperimentSetup {
+  participantId: string;
+  experimentDate: string;
+  floorPlan: FloorPlan;
+}
+
+/** YYYY-MM-DD 형식인지 검사합니다. */
+export function isValidExperimentDate(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
 }

@@ -4,12 +4,14 @@ import { redirect } from "next/navigation";
 import { ParticipantList } from "@/components/admin/participant-list";
 import { getCurrentAdmin } from "@/lib/admin-session";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
-import type { GuideType } from "@/types/experiment";
+import type { GuideType, SessionNumber } from "@/types/experiment";
 
 interface SubmissionRow {
   id: string;
   participant_id: string;
   experiment_code: string;
+  experiment_date: string | null;
+  session_number: SessionNumber | null;
   guide_type: GuideType | "unspecified";
   started_at: string;
   submitted_at: string;
@@ -26,7 +28,9 @@ export default async function AdminPage() {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("experiment_submissions")
-    .select("id, participant_id, experiment_code, guide_type, started_at, submitted_at, duration_ms, deleted_marker_count")
+    .select(
+      "id, participant_id, experiment_code, experiment_date, session_number, guide_type, started_at, submitted_at, duration_ms, deleted_marker_count",
+    )
     .order("submitted_at", { ascending: false });
 
   const submissions = (data ?? []) as SubmissionRow[];

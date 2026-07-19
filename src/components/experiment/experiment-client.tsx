@@ -7,15 +7,18 @@ import { ExperimentInstructions } from "@/components/experiment/experiment-instr
 import { FloorPlanCanvas } from "@/components/experiment/floor-plan-canvas";
 import { IncidentalRecognitionForm } from "@/components/experiment/incidental-recognition-form";
 import { MarkerProgress } from "@/components/experiment/marker-progress";
-import { ParticipantIdForm, type ExperimentSetup } from "@/components/experiment/participant-id-form";
+import { ParticipantIdForm } from "@/components/experiment/participant-id-form";
 import { canPlaceMarker, getRemainingMarkersByColor } from "@/lib/markers";
 import { submitExperiment, submitIncidentalRecognition } from "@/lib/submission-client";
 import {
   buildExperimentCode,
   getIncidentalObjects,
   GUIDE_TYPE_LABELS,
+  SESSION_NUMBERS,
+  SESSION_NUMBER_LABELS,
   TOTAL_MARKERS,
   type ExperimentEvent,
+  type ExperimentSetup,
   type FloorPlan,
   type GuideType,
   type IncidentalRecognitionResponse,
@@ -24,67 +27,93 @@ import {
   type SessionNumber,
 } from "@/types/experiment";
 
+/** 화면에 표시하고 응답하는 가이드 순서입니다. */
+const GUIDE_ORDER: GuideType[] = ["AAG", "VG", "NG"];
+
+type Phase = "position" | "incidental" | "done";
 type Notice = { kind: "error" | "info"; message: string } | null;
 
 function now(): string {
   return new Date().toISOString();
 }
 
+function byGuide<T>(factory: (guide: GuideType) => T): Record<GuideType, T> {
+  return { AAG: factory("AAG"), VG: factory("VG"), NG: factory("NG") };
+}
+
 export function ExperimentClient() {
   const [participantId, setParticipantId] = useState<string | null>(null);
-  const [guideType, setGuideType] = useState<GuideType | null>(null);
-  const [sessionNumber, setSessionNumber] = useState<SessionNumber | null>(null);
+  const [experimentDate, setExperimentDate] = useState<string | null>(null);
   const [floorPlan, setFloorPlan] = useState<FloorPlan | null>(null);
-  const [startedAt, setStartedAt] = useState<string | null>(null);
-  const [activeColor, setActiveColor] = useState<MarkerColor>("red");
-  const [markers, setMarkers] = useState<Marker[]>([]);
-  const [events, setEvents] = useState<ExperimentEvent[]>([]);
-  const [deletedMarkerCount, setDeletedMarkerCount] = useState(0);
+  const [phase, setPhase] = useState<Phase>("position");
   const [notice, setNotice] = useState<Notice>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submissionId, setSubmissionId] = useState<string | null>(null);
 
-  // 2단계: 우연객체 재인(봤음/못 봤음) 검사 상태입니다.
+  // 1단계: 가이드별 위치 응답 상태입니다.
+  const [positionStartedAt, setPositionStartedAt] = useState<string | null>(null);
+  const [activeGuide, setActiveGuide] = useState<GuideType>("AAG");
+  const [activeColor, setActiveColor] = useState<MarkerColor>("red");
+  const [markersByGuide, setMarkersByGuide] = useState<Record<GuideType, Marker[]>>(byGuide(() => []));
+  const [eventsByGuide, setEventsByGuide] = useState<Record<GuideType, ExperimentEvent[]>>(byGuide(() => []));
+  const [deletedByGuide, setDeletedByGuide] = useState<Record<GuideType, number>>(byGuide(() => 0));
+  const [positionIdByGuide, setPositionIdByGuide] = useState<Record<GuideType, string | null>>(byGuide(() => null));
+
+  // 2단계: 가이드별 우연객체 재인 검사 상태입니다.
   const [recognitionStartedAt, setRecognitionStartedAt] = useState<string | null>(null);
-  const [recognitionAnswers, setRecognitionAnswers] = useState<Map<string, IncidentalRecognitionResponse>>(
-    new Map(),
+  const [sessionByGuide, setSessionByGuide] = useState<Record<GuideType, SessionNumber | "">>(byGuide(() => ""));
+  const [recognitionByGuide, setRecognitionByGuide] = useState<
+    Record<GuideType, Map<string, IncidentalRecognitionResponse>>
+  >(byGuide(() => new Map()));
+  const [recognitionIdByGuide, setRecognitionIdByGuide] = useState<Record<GuideType, string | null>>(
+    byGuide(() => null),
   );
-  const [recognitionSubmissionId, setRecognitionSubmissionId] = useState<string | null>(null);
 
+  const markers = markersByGuide[activeGuide];
   const remainingByColor = getRemainingMarkersByColor(markers);
-  const isMainSubmitted = submissionId !== null;
-  const isRecognitionSubmitted = recognitionSubmissionId !== null;
-  const isInteractionDisabled = isSubmitting || isMainSubmitted;
-  const isRecognitionDisabled = isSubmitting || isRecognitionSubmitted;
+  const allGuidesComplete = GUIDE_ORDER.every((guide) => markersByGuide[guide].length === TOTAL_MARKERS);
+  const isPositionDisabled = isSubmitting || phase !== "position";
 
-  const incidentalObjects = sessionNumber ? getIncidentalObjects(sessionNumber) : [];
+  function updateActiveGuide<T>(
+    setter: (updater: (current: Record<GuideType, T>) => Record<GuideType, T>) => void,
+    update: (currentValue: T) => T,
+  ) {
+    setter((current) => ({ ...current, [activeGuide]: update(current[activeGuide]) }));
+  }
 
-  function appendEvent(event: ExperimentEvent) {
-    setEvents((currentEvents) => [...currentEvents, event]);
+  function appendActiveEvent(event: ExperimentEvent) {
+    updateActiveGuide(setEventsByGuide, (events) => [...events, event]);
   }
 
   function handleStart(setup: ExperimentSetup) {
     const started = now();
     setParticipantId(setup.participantId);
-    setGuideType(setup.guideType);
-    setSessionNumber(setup.sessionNumber);
+    setExperimentDate(setup.experimentDate);
     setFloorPlan(setup.floorPlan);
-    setStartedAt(started);
-    setEvents([{ type: "start", occurredAt: started }]);
+    setPositionStartedAt(started);
+    setEventsByGuide(byGuide(() => [{ type: "start", occurredAt: started }]));
+    setActiveGuide("AAG");
+    setPhase("position");
+  }
+
+  function handleGuideSelect(guide: GuideType) {
+    if (isPositionDisabled) {
+      return;
+    }
+    setActiveGuide(guide);
+    setNotice(null);
   }
 
   function handleColorSelect(color: MarkerColor) {
-    if (isInteractionDisabled) {
+    if (isPositionDisabled) {
       return;
     }
-
     setActiveColor(color);
-    appendEvent({ type: "color_select", color, occurredAt: now() });
+    appendActiveEvent({ type: "color_select", color, occurredAt: now() });
     setNotice(null);
   }
 
   function handlePlaceMarker(x: number, y: number) {
-    if (isInteractionDisabled) {
+    if (isPositionDisabled) {
       return;
     }
 
@@ -94,22 +123,14 @@ export function ExperimentClient() {
     }
 
     const placedAt = now();
-    const marker: Marker = {
-      id: crypto.randomUUID(),
-      color: activeColor,
-      x,
-      y,
-      placedAt,
-      moveCount: 0,
-    };
-
-    setMarkers((currentMarkers) => [...currentMarkers, marker]);
-    appendEvent({ type: "marker_place", markerId: marker.id, color: marker.color, x, y, occurredAt: placedAt });
+    const marker: Marker = { id: crypto.randomUUID(), color: activeColor, x, y, placedAt, moveCount: 0 };
+    updateActiveGuide(setMarkersByGuide, (currentMarkers) => [...currentMarkers, marker]);
+    appendActiveEvent({ type: "marker_place", markerId: marker.id, color: marker.color, x, y, occurredAt: placedAt });
     setNotice(null);
   }
 
   function handleMarkerPositionChange(markerId: string, x: number, y: number, commit: boolean) {
-    if (isInteractionDisabled) {
+    if (isPositionDisabled) {
       return;
     }
 
@@ -118,21 +139,19 @@ export function ExperimentClient() {
       return;
     }
 
-    setMarkers((currentMarkers) =>
+    updateActiveGuide(setMarkersByGuide, (currentMarkers) =>
       currentMarkers.map((marker) =>
-        marker.id === markerId
-          ? { ...marker, x, y, moveCount: marker.moveCount + (commit ? 1 : 0) }
-          : marker,
+        marker.id === markerId ? { ...marker, x, y, moveCount: marker.moveCount + (commit ? 1 : 0) } : marker,
       ),
     );
 
     if (commit) {
-      appendEvent({ type: "marker_move", markerId, color: movedMarker.color, x, y, occurredAt: now() });
+      appendActiveEvent({ type: "marker_move", markerId, color: movedMarker.color, x, y, occurredAt: now() });
     }
   }
 
   function handleDeleteMarker(markerId: string) {
-    if (isInteractionDisabled) {
+    if (isPositionDisabled) {
       return;
     }
 
@@ -141,9 +160,9 @@ export function ExperimentClient() {
       return;
     }
 
-    setMarkers((currentMarkers) => currentMarkers.filter((marker) => marker.id !== markerId));
-    setDeletedMarkerCount((count) => count + 1);
-    appendEvent({
+    updateActiveGuide(setMarkersByGuide, (currentMarkers) => currentMarkers.filter((marker) => marker.id !== markerId));
+    updateActiveGuide(setDeletedByGuide, (count) => count + 1);
+    appendActiveEvent({
       type: "marker_delete",
       markerId,
       color: deletedMarker.color,
@@ -154,18 +173,18 @@ export function ExperimentClient() {
   }
 
   function handleReset() {
-    if (isInteractionDisabled || markers.length === 0) {
+    if (isPositionDisabled || markers.length === 0) {
       return;
     }
 
-    if (!window.confirm("입력한 마커를 모두 지울까요? 이 작업은 되돌릴 수 없습니다.")) {
+    if (!window.confirm(`${GUIDE_TYPE_LABELS[activeGuide]}의 마커를 모두 지울까요? 이 작업은 되돌릴 수 없습니다.`)) {
       return;
     }
 
     const deletedAt = now();
-    setDeletedMarkerCount((count) => count + markers.length);
-    setEvents((currentEvents) => [
-      ...currentEvents,
+    updateActiveGuide(setDeletedByGuide, (count) => count + markers.length);
+    updateActiveGuide(setEventsByGuide, (events) => [
+      ...events,
       ...markers.map((marker) => ({
         type: "marker_delete" as const,
         markerId: marker.id,
@@ -175,44 +194,56 @@ export function ExperimentClient() {
         occurredAt: deletedAt,
       })),
     ]);
-    setMarkers([]);
-    setNotice({ kind: "info", message: "모든 마커를 초기화했습니다." });
+    updateActiveGuide(setMarkersByGuide, () => []);
+    setNotice({ kind: "info", message: `${GUIDE_TYPE_LABELS[activeGuide]}의 마커를 초기화했습니다.` });
   }
 
-  async function handleSubmit() {
-    if (!participantId || !guideType || !sessionNumber || !floorPlan || !startedAt || isInteractionDisabled) {
+  async function handlePositionSubmit() {
+    if (!participantId || !experimentDate || !floorPlan || !positionStartedAt || isSubmitting) {
       return;
     }
 
-    if (markers.length !== TOTAL_MARKERS) {
-      setNotice({ kind: "error", message: `제출하려면 마커 ${TOTAL_MARKERS}개를 모두 입력해야 합니다.` });
+    const incompleteGuide = GUIDE_ORDER.find((guide) => markersByGuide[guide].length !== TOTAL_MARKERS);
+    if (incompleteGuide) {
+      setNotice({
+        kind: "error",
+        message: `${GUIDE_TYPE_LABELS[incompleteGuide]}의 마커가 ${markersByGuide[incompleteGuide].length}/${TOTAL_MARKERS}개입니다. 세 가이드 모두 ${TOTAL_MARKERS}개를 입력해야 제출할 수 있습니다.`,
+      });
+      setActiveGuide(incompleteGuide);
       return;
     }
 
-    const submittedAt = now();
-    const submitEvent: ExperimentEvent = { type: "submit", occurredAt: submittedAt };
-    const submissionEvents = [...events, submitEvent];
-    setEvents(submissionEvents);
     setIsSubmitting(true);
     setNotice(null);
 
+    const submittedAt = now();
+    const savedIds = { ...positionIdByGuide };
     try {
-      const { submissionId: savedId } = await submitExperiment({
-        experimentCode: buildExperimentCode(floorPlan, sessionNumber),
-        participantId,
-        guideType,
-        startedAt,
-        submittedAt,
-        deletedMarkerCount,
-        markers,
-        events: submissionEvents,
-      });
-      setSubmissionId(savedId);
+      for (const guide of GUIDE_ORDER) {
+        if (savedIds[guide]) {
+          continue; // 이미 저장된 가이드는 재제출하지 않습니다.
+        }
+        const submissionEvents = [...eventsByGuide[guide], { type: "submit" as const, occurredAt: submittedAt }];
+        const { submissionId } = await submitExperiment({
+          experimentCode: floorPlan,
+          participantId,
+          experimentDate,
+          guideType: guide,
+          startedAt: positionStartedAt,
+          submittedAt,
+          deletedMarkerCount: deletedByGuide[guide],
+          markers: markersByGuide[guide],
+          events: submissionEvents,
+        });
+        savedIds[guide] = submissionId;
+      }
+      setPositionIdByGuide(savedIds);
 
-      // 2단계(우연객체 재인 검사)를 시작합니다.
+      // 2단계(우연객체 재인 검사)로 넘어갑니다.
       setRecognitionStartedAt(now());
-      setRecognitionAnswers(new Map());
+      setPhase("incidental");
     } catch (error) {
+      setPositionIdByGuide(savedIds);
       const message = error instanceof Error ? error.message : "응답을 저장하지 못했습니다.";
       setNotice({ kind: "error", message });
     } finally {
@@ -220,71 +251,90 @@ export function ExperimentClient() {
     }
   }
 
-  function handleRecognitionAnswer(objectId: string, seen: boolean) {
-    if (isRecognitionDisabled) {
+  function handleSessionSelect(guide: GuideType, session: SessionNumber | "") {
+    if (isSubmitting || recognitionIdByGuide[guide]) {
+      return;
+    }
+    setSessionByGuide((current) => ({ ...current, [guide]: session }));
+    // 세션을 바꾸면 객체 목록이 달라지므로 해당 가이드의 응답을 초기화합니다.
+    setRecognitionByGuide((current) => ({ ...current, [guide]: new Map() }));
+    setNotice(null);
+  }
+
+  function handleRecognitionAnswer(guide: GuideType, objectId: string, seen: boolean) {
+    if (isSubmitting || recognitionIdByGuide[guide]) {
       return;
     }
 
-    setRecognitionAnswers((currentAnswers) => {
-      const nextAnswers = new Map(currentAnswers);
-      const existing = nextAnswers.get(objectId);
-
+    setRecognitionByGuide((current) => {
+      const guideAnswers = new Map(current[guide]);
+      const existing = guideAnswers.get(objectId);
       if (existing && existing.seen === seen) {
-        return currentAnswers;
+        return current;
       }
-
-      nextAnswers.set(objectId, {
+      guideAnswers.set(objectId, {
         objectId,
         seen,
         answeredAt: now(),
         changeCount: existing ? existing.changeCount + 1 : 0,
       });
-      return nextAnswers;
+      return { ...current, [guide]: guideAnswers };
     });
     setNotice(null);
   }
 
-  async function handleRecognitionSubmit() {
-    if (
-      !participantId ||
-      !guideType ||
-      !sessionNumber ||
-      !floorPlan ||
-      !recognitionStartedAt ||
-      !submissionId ||
-      isRecognitionDisabled
-    ) {
+  async function handleIncidentalSubmit() {
+    if (!participantId || !experimentDate || !floorPlan || !recognitionStartedAt || isSubmitting) {
       return;
     }
 
-    if (recognitionAnswers.size !== incidentalObjects.length) {
-      setNotice({
-        kind: "error",
-        message: `제출하려면 ${incidentalObjects.length}개 물건 모두에 답해야 합니다. (현재 ${recognitionAnswers.size}개)`,
-      });
-      return;
+    for (const guide of GUIDE_ORDER) {
+      const session = sessionByGuide[guide];
+      if (!session) {
+        setNotice({ kind: "error", message: `${GUIDE_TYPE_LABELS[guide]}의 세션을 선택해 주세요.` });
+        return;
+      }
+      const objects = getIncidentalObjects(session);
+      if (recognitionByGuide[guide].size !== objects.length) {
+        setNotice({
+          kind: "error",
+          message: `${GUIDE_TYPE_LABELS[guide]}의 물건 ${objects.length}개 모두에 답해야 합니다. (현재 ${recognitionByGuide[guide].size}개)`,
+        });
+        return;
+      }
     }
-
-    // 화면 표시 순서대로 정렬해 전송합니다.
-    const responses = incidentalObjects
-      .map((objectDef) => recognitionAnswers.get(objectDef.id))
-      .filter((response): response is IncidentalRecognitionResponse => response !== undefined);
 
     setIsSubmitting(true);
     setNotice(null);
 
+    const submittedAt = now();
+    const savedIds = { ...recognitionIdByGuide };
     try {
-      const { submissionId: savedId } = await submitIncidentalRecognition({
-        experimentCode: buildExperimentCode(floorPlan, sessionNumber),
-        participantId,
-        guideType,
-        mainSubmissionId: submissionId,
-        startedAt: recognitionStartedAt,
-        submittedAt: now(),
-        responses,
-      });
-      setRecognitionSubmissionId(savedId);
+      for (const guide of GUIDE_ORDER) {
+        if (savedIds[guide]) {
+          continue;
+        }
+        const session = sessionByGuide[guide] as SessionNumber;
+        const objects = getIncidentalObjects(session);
+        const responses = objects
+          .map((objectDef) => recognitionByGuide[guide].get(objectDef.id))
+          .filter((response): response is IncidentalRecognitionResponse => response !== undefined);
+
+        const { submissionId } = await submitIncidentalRecognition({
+          experimentCode: buildExperimentCode(floorPlan, session),
+          participantId,
+          guideType: guide,
+          mainSubmissionId: positionIdByGuide[guide] ?? "",
+          startedAt: recognitionStartedAt,
+          submittedAt,
+          responses,
+        });
+        savedIds[guide] = submissionId;
+      }
+      setRecognitionIdByGuide(savedIds);
+      setPhase("done");
     } catch (error) {
+      setRecognitionIdByGuide(savedIds);
       const message = error instanceof Error ? error.message : "응답을 저장하지 못했습니다.";
       setNotice({ kind: "error", message });
     } finally {
@@ -292,31 +342,14 @@ export function ExperimentClient() {
     }
   }
 
-  if (!participantId || !floorPlan) {
+  if (!participantId || !experimentDate || !floorPlan) {
     return <ParticipantIdForm onStart={handleStart} />;
-  }
-
-  if (isMainSubmitted && isRecognitionSubmitted) {
-    return (
-      <main className="mx-auto flex min-h-screen max-w-xl items-center px-5 py-10">
-        <section className="w-full rounded-3xl border border-emerald-200 bg-white p-8 text-center shadow-sm">
-          <p className="text-sm font-semibold text-emerald-700">제출 완료</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">모든 응답이 저장되었습니다.</h1>
-          <p className="mt-4 text-sm leading-6 text-slate-600">
-            연구자의 다음 안내를 기다려 주세요. 제출된 응답은 더 이상 수정할 수 없습니다.
-          </p>
-          <p className="mt-5 text-xs text-slate-400">본 응답 저장 번호: {submissionId}</p>
-          <p className="mt-1 text-xs text-slate-400">우연객체 저장 번호: {recognitionSubmissionId}</p>
-        </section>
-      </main>
-    );
   }
 
   const headerLine = (
     <p className="text-sm text-slate-600">
-      참가자 번호: <span className="font-semibold text-slate-900">{participantId}</span>
-      {guideType ? <> · 가이드: <span className="font-semibold text-slate-900">{GUIDE_TYPE_LABELS[guideType]}</span></> : null}
-      {sessionNumber ? <> · 세션: <span className="font-semibold text-slate-900">{sessionNumber}</span></> : null}
+      참가자: <span className="font-semibold text-slate-900">{participantId}</span>
+      <> · 날짜: <span className="font-semibold text-slate-900">{experimentDate}</span></>
       <> · 평면도: <span className="font-semibold text-slate-900">{floorPlan}</span></>
     </p>
   );
@@ -332,8 +365,31 @@ export function ExperimentClient() {
     </p>
   ) : null;
 
-  // 2단계: 우연객체 재인(봤음/못 봤음) 검사 화면입니다.
-  if (isMainSubmitted) {
+  if (phase === "done") {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-xl items-center px-5 py-10">
+        <section className="w-full rounded-3xl border border-emerald-200 bg-white p-8 text-center shadow-sm">
+          <p className="text-sm font-semibold text-emerald-700">제출 완료</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">모든 응답이 저장되었습니다.</h1>
+          <p className="mt-4 text-sm leading-6 text-slate-600">
+            세 가이드(AAG·VG·NG)의 위치 응답과 우연객체 확인이 모두 저장되었습니다. 연구자의 다음 안내를 기다려
+            주세요.
+          </p>
+          <div className="mt-5 space-y-1 text-xs text-slate-400">
+            {GUIDE_ORDER.map((guide) => (
+              <p key={guide}>
+                {GUIDE_TYPE_LABELS[guide]}: {positionIdByGuide[guide]?.slice(0, 8) ?? "-"} · 우연객체{" "}
+                {recognitionIdByGuide[guide]?.slice(0, 8) ?? "-"}
+              </p>
+            ))}
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  // 2단계: 가이드별 우연객체 재인 검사 화면입니다.
+  if (phase === "incidental") {
     return (
       <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl">
@@ -347,29 +403,65 @@ export function ExperimentClient() {
 
           <section className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm">
             <p className="text-sm leading-6 text-indigo-900">
-              아래 물건들 중 일부는 방금 체험한 공간에 실제로 있었고, 일부는 없었습니다. 각 물건을{" "}
-              <span className="font-semibold">본 적이 있는지</span> 선택해 주세요. 위치는 기억하지 않아도 됩니다.
+              가이드별로 어떤 세션을 진행했는지 선택한 뒤, 각 물건을 그 체험 중에 <span className="font-semibold">본 적이 있는지</span>{" "}
+              골라 주세요. 위치는 기억하지 않아도 됩니다.
             </p>
           </section>
 
-          <IncidentalRecognitionForm
-            objects={incidentalObjects}
-            answers={new Map([...recognitionAnswers].map(([objectId, response]) => [objectId, response.seen]))}
-            isDisabled={isRecognitionDisabled}
-            onAnswer={handleRecognitionAnswer}
-          />
+          <div className="space-y-6">
+            {GUIDE_ORDER.map((guide) => {
+              const session = sessionByGuide[guide];
+              const objects = session ? getIncidentalObjects(session) : [];
+              const answers = recognitionByGuide[guide];
 
-          <div className="mt-4 space-y-4">
+              return (
+                <section key={guide} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                    <h2 className="text-lg font-semibold text-slate-900">{GUIDE_TYPE_LABELS[guide]}</h2>
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      세션
+                      <select
+                        value={session}
+                        disabled={isSubmitting || recognitionIdByGuide[guide] !== null}
+                        onChange={(event) => handleSessionSelect(guide, event.target.value as SessionNumber | "")}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition focus:border-indigo-600 focus:ring-4 focus:ring-indigo-100 disabled:opacity-60"
+                      >
+                        <option value="">세션 선택</option>
+                        {SESSION_NUMBERS.map((sessionNumber) => (
+                          <option key={sessionNumber} value={sessionNumber}>
+                            {SESSION_NUMBER_LABELS[sessionNumber]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  {session ? (
+                    <div className="mt-4">
+                      <IncidentalRecognitionForm
+                        objects={objects}
+                        answers={new Map([...answers].map(([objectId, response]) => [objectId, response.seen]))}
+                        isDisabled={isSubmitting || recognitionIdByGuide[guide] !== null}
+                        onAnswer={(objectId, seen) => handleRecognitionAnswer(guide, objectId, seen)}
+                      />
+                      <p className="mt-3 text-right text-sm text-slate-600">
+                        응답: <span className="font-semibold text-slate-900">{answers.size}</span> / {objects.length}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm text-slate-500">먼저 이 가이드에서 진행한 세션을 선택해 주세요.</p>
+                  )}
+                </section>
+              );
+            })}
+
             {noticeBox}
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-sm text-slate-600">
-                응답 현황: <span className="font-semibold text-slate-900">{recognitionAnswers.size}</span> /{" "}
-                {incidentalObjects.length}
-              </p>
+
+            <div className="flex justify-end">
               <button
                 type="button"
-                disabled={isRecognitionDisabled}
-                onClick={handleRecognitionSubmit}
+                disabled={isSubmitting}
+                onClick={handleIncidentalSubmit}
                 className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSubmitting ? "저장 중…" : "제출"}
@@ -380,6 +472,35 @@ export function ExperimentClient() {
       </main>
     );
   }
+
+  // 1단계: 가이드별 위치 응답 화면입니다.
+  const guideButtons = (
+    <div className="flex flex-col gap-2">
+      {GUIDE_ORDER.map((guide) => {
+        const count = markersByGuide[guide].length;
+        const isComplete = count === TOTAL_MARKERS;
+        const isActive = guide === activeGuide;
+        return (
+          <button
+            key={guide}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => handleGuideSelect(guide)}
+            className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm font-semibold shadow-sm transition ${
+              isActive
+                ? "border-indigo-600 bg-indigo-600 text-white"
+                : "border-slate-300 bg-white/95 text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            <span>{guide}</span>
+            <span className={`text-xs ${isActive ? "text-indigo-100" : isComplete ? "text-emerald-600" : "text-slate-400"}`}>
+              {count}/{TOTAL_MARKERS}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
@@ -397,24 +518,27 @@ export function ExperimentClient() {
             <FloorPlanCanvas
               floorPlan={floorPlan}
               markers={markers}
-              isDisabled={isInteractionDisabled}
+              isDisabled={isPositionDisabled}
               onPlaceMarker={handlePlaceMarker}
               onDeleteMarker={handleDeleteMarker}
               onMarkerPositionChange={handleMarkerPositionChange}
+              topLeftOverlay={guideButtons}
             />
             <p className="mt-3 text-sm text-slate-500">
-              이동 버튼을 켜고 드래그하면 평면도가 이동하고, 휠로 확대·축소할 수 있습니다. 이동 버튼을 끄고 빈
-              위치를 클릭해 선택한 색상의 마커를 배치하세요.
+              왼쪽 위에서 가이드(AAG·VG·NG)를 선택하면 그 가이드의 위치를 입력합니다. 세 가이드 모두 마커
+              {TOTAL_MARKERS}개씩 입력한 뒤 제출하세요. 이동 버튼을 켜면 드래그로 평면도를 옮길 수 있습니다.
             </p>
           </section>
 
           <aside className="space-y-4">
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm font-semibold text-slate-800">
+                현재 가이드: <span className="text-indigo-700">{GUIDE_TYPE_LABELS[activeGuide]}</span>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">평면도 왼쪽 위 버튼으로 가이드를 전환할 수 있습니다.</p>
+            </section>
             <ExperimentInstructions />
-            <ColorSelector
-              activeColor={activeColor}
-              remainingByColor={remainingByColor}
-              onSelect={handleColorSelect}
-            />
+            <ColorSelector activeColor={activeColor} remainingByColor={remainingByColor} onSelect={handleColorSelect} />
             <MarkerProgress remainingByColor={remainingByColor} placedCount={markers.length} />
 
             {noticeBox}
@@ -422,21 +546,26 @@ export function ExperimentClient() {
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                disabled={isInteractionDisabled || markers.length === 0}
+                disabled={isPositionDisabled || markers.length === 0}
                 onClick={handleReset}
                 className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                전체 초기화
+                현재 가이드 초기화
               </button>
               <button
                 type="button"
-                disabled={isInteractionDisabled}
-                onClick={handleSubmit}
+                disabled={isSubmitting || !allGuidesComplete}
+                onClick={handlePositionSubmit}
                 className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSubmitting ? "저장 중…" : "제출"}
               </button>
             </div>
+            {!allGuidesComplete ? (
+              <p className="text-center text-xs text-slate-400">
+                세 가이드 모두 {TOTAL_MARKERS}개를 입력하면 제출할 수 있습니다.
+              </p>
+            ) : null}
           </aside>
         </div>
       </div>
