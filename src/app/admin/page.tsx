@@ -2,9 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { ParticipantList } from "@/components/admin/participant-list";
+import { scoreSubmissions, type SubmissionScore } from "@/lib/answer-key-server";
 import { getCurrentAdmin } from "@/lib/admin-session";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
-import type { GuideType, SessionNumber } from "@/types/experiment";
+import type { FloorPlan, GuideType, SessionNumber } from "@/types/experiment";
 
 interface SubmissionRow {
   id: string;
@@ -35,6 +36,20 @@ export default async function AdminPage() {
 
   const submissions = (data ?? []) as SubmissionRow[];
 
+  let scores: Record<string, SubmissionScore> = {};
+  try {
+    scores = await scoreSubmissions(
+      submissions.map((submission) => ({
+        id: submission.id,
+        participant_id: submission.participant_id,
+        floor_plan: submission.experiment_code as FloorPlan,
+        session_number: submission.session_number,
+      })),
+    );
+  } catch {
+    scores = {};
+  }
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
@@ -46,8 +61,14 @@ export default async function AdminPage() {
           </div>
           <div className="flex items-center gap-4">
             <Link
-              href="/admin/aag-answer-sets"
+              href="/admin/answer-keys"
               className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+            >
+              정답 세트 · 채점
+            </Link>
+            <Link
+              href="/admin/aag-answer-sets"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
             >
               AAG 정답 세트
             </Link>
@@ -68,7 +89,7 @@ export default async function AdminPage() {
             참가자 목록을 불러오지 못했습니다. Supabase 설정과 관리자 권한을 확인해 주세요.
           </section>
         ) : (
-          <ParticipantList submissions={submissions} />
+          <ParticipantList submissions={submissions} scores={scores} />
         )}
       </div>
     </main>

@@ -1,7 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import type { SubmissionScore } from "@/lib/answer-key-server";
 import { GUIDE_TYPE_LABELS, SESSION_NUMBERS, type GuideType, type SessionNumber } from "@/types/experiment";
 
 interface SubmissionRow {
@@ -19,6 +21,34 @@ interface SubmissionRow {
 
 interface ParticipantListProps {
   submissions: SubmissionRow[];
+  scores: Record<string, SubmissionScore>;
+}
+
+const SCORE_STATUS_LABEL: Record<Exclude<SubmissionScore["status"], "scored">, string> = {
+  no_session: "세션 미지정",
+  no_answer_key: "정답 없음",
+  no_calibration: "캘리브레이션 없음",
+};
+
+function ScoreCell({ score }: { score: SubmissionScore | undefined }) {
+  if (!score) {
+    return <span className="text-xs text-slate-400">-</span>;
+  }
+  if (score.status !== "scored") {
+    return <span className="text-xs text-slate-400">{SCORE_STATUS_LABEL[score.status]}</span>;
+  }
+  const accuracyPercent = Math.round((score.accuracy ?? 0) * 100);
+  return (
+    <span className="flex flex-col">
+      <span className="font-semibold text-slate-900">
+        {accuracyPercent}%
+        <span className="ml-1 text-xs font-normal text-slate-500">
+          ({score.withinThreshold}/{score.totalMarkers}, ≤{score.thresholdMeters}m)
+        </span>
+      </span>
+      <span className="text-xs text-slate-500">평균 {score.meanErrorMeters?.toFixed(2)}m</span>
+    </span>
+  );
 }
 
 /** 하나의 응답(위치 + 연결된 우연객체)을 삭제하는 버튼입니다. */
@@ -71,6 +101,7 @@ function formatDuration(durationMs: number): string {
 
 /** 세션을 관리자가 수동으로 매칭하는 드롭다운입니다. 저장은 서버 API를 통해 이뤄집니다. */
 function SessionMatcher({ submissionId, initial }: { submissionId: string; initial: SessionNumber | null }) {
+  const router = useRouter();
   const [session, setSession] = useState<SessionNumber | "">(initial ?? "");
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
@@ -88,6 +119,8 @@ function SessionMatcher({ submissionId, initial }: { submissionId: string; initi
         throw new Error("failed");
       }
       setStatus("saved");
+      // 세션이 바뀌면 정답률을 다시 계산하도록 서버 데이터를 새로고침합니다.
+      router.refresh();
     } catch {
       setSession(previous);
       setStatus("error");
@@ -118,7 +151,7 @@ function SessionMatcher({ submissionId, initial }: { submissionId: string; initi
   );
 }
 
-export function ParticipantList({ submissions: initialSubmissions }: ParticipantListProps) {
+export function ParticipantList({ submissions: initialSubmissions, scores }: ParticipantListProps) {
   const [submissions, setSubmissions] = useState(initialSubmissions);
 
   if (submissions.length === 0) {
@@ -152,6 +185,9 @@ export function ParticipantList({ submissions: initialSubmissions }: Participant
                 세션 매칭
               </th>
               <th scope="col" className="px-5 py-4 font-semibold">
+                정답률 (거리)
+              </th>
+              <th scope="col" className="px-5 py-4 font-semibold">
                 제출 시각 (KST)
               </th>
               <th scope="col" className="px-5 py-4 font-semibold">
@@ -176,6 +212,9 @@ export function ParticipantList({ submissions: initialSubmissions }: Participant
                 </td>
                 <td className="whitespace-nowrap px-5 py-4">
                   <SessionMatcher submissionId={submission.id} initial={submission.session_number} />
+                </td>
+                <td className="whitespace-nowrap px-5 py-4">
+                  <ScoreCell score={scores[submission.id]} />
                 </td>
                 <td className="whitespace-nowrap px-5 py-4">{formatDateTime(submission.submitted_at)}</td>
                 <td className="whitespace-nowrap px-5 py-4">{formatDuration(submission.duration_ms)}</td>
