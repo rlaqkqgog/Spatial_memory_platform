@@ -3,13 +3,28 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type SyntheticEvent } from "react";
 
 import { clampNormalizedCoordinate } from "@/lib/markers";
-import { FLOOR_PLAN_IMAGES, type FloorPlan, type Marker, type MarkerColor } from "@/types/experiment";
+import { FLOOR_PLAN_IMAGES, type FloorPlan, type MarkerColor } from "@/types/experiment";
 
-const MARKER_STYLE: Record<MarkerColor, string> = {
+export type CanvasMarkerColor = MarkerColor | "incidental";
+
+/** 본 응답(색상 마커)과 우연객체 응답(배지 마커)을 모두 표현하는 캔버스용 마커입니다. */
+export interface CanvasMarker {
+  id: string;
+  color: CanvasMarkerColor;
+  x: number;
+  y: number;
+  /** 마커 안에 표시할 짧은 텍스트(예: 우연객체 번호)입니다. */
+  badge?: string;
+  /** 접근성·삭제 버튼 레이블입니다. 없으면 색상명을 사용합니다. */
+  label?: string;
+}
+
+const MARKER_STYLE: Record<CanvasMarkerColor, string> = {
   red: "bg-red-500",
   blue: "bg-blue-500",
   green: "bg-emerald-500",
   yellow: "bg-amber-400",
+  incidental: "bg-violet-500",
 };
 
 /** 줌 1은 평면도 전체가 화면에 들어오는 fit 상태입니다. */
@@ -42,7 +57,7 @@ interface ViewState {
 
 interface FloorPlanCanvasProps {
   floorPlan: FloorPlan;
-  markers: Marker[];
+  markers: CanvasMarker[];
   isDisabled: boolean;
   onPlaceMarker: (x: number, y: number) => void;
   onDeleteMarker: (markerId: string) => void;
@@ -230,7 +245,7 @@ export function FloorPlanCanvas({
     };
   }
 
-  function handleMarkerPointerDown(event: PointerEvent<HTMLDivElement>, marker: Marker) {
+  function handleMarkerPointerDown(event: PointerEvent<HTMLDivElement>, marker: CanvasMarker) {
     // 이동 모드에서는 마커를 잡지 않고 이벤트를 캔버스로 흘려 화면 이동만 하게 합니다.
     if (isDisabled || isMoveMode) {
       return;
@@ -395,16 +410,17 @@ export function FloorPlanCanvas({
           <div
             key={marker.id}
             role="img"
-            aria-label={`${marker.color} 마커`}
-            className={`absolute h-8 w-8 touch-none select-none rounded-full border-2 border-white shadow-md transition-shadow ${
+            aria-label={`${marker.label ?? marker.color} 마커`}
+            className={`absolute flex h-8 w-8 touch-none select-none items-center justify-center rounded-full border-2 border-white text-xs font-bold text-white shadow-md transition-shadow ${
               MARKER_STYLE[marker.color]
             } ${draggingMarkerId === marker.id ? "z-20 scale-110 cursor-grabbing" : "z-10 cursor-grab"}`}
             style={{ left: `${marker.x * 100}%`, top: `${marker.y * 100}%`, transform: "translate(-50%, -50%)" }}
             onPointerDown={(event) => handleMarkerPointerDown(event, marker)}
           >
+            {marker.badge ?? null}
             <button
               type="button"
-              aria-label={`${marker.color} 마커 삭제`}
+              aria-label={`${marker.label ?? marker.color} 마커 삭제`}
               disabled={isDisabled}
               className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white opacity-95 shadow-sm hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 disabled:hidden"
               onPointerDown={(event) => event.stopPropagation()}
