@@ -248,7 +248,8 @@ export function ExperimentClient() {
               onMarkerPositionChange={handleMarkerPositionChange}
             />
             <p className="mt-3 text-sm text-slate-500">
-              드래그로 평면도를 이동하고 휠로 확대·축소한 뒤, 빈 위치를 클릭해 선택한 색상의 마커를 배치하세요.
+              스페이스바를 누른 채 드래그하면 평면도가 이동하고, 휠로 확대·축소할 수 있습니다. 빈 위치를 클릭해
+              선택한 색상의 마커를 배치하세요.
             </p>
           </section>
 

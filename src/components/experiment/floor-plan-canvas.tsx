@@ -89,6 +89,7 @@ export function FloorPlanCanvas({
   const panRef = useRef<PanState | null>(null);
   const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null);
   const [isPanning, setIsPanning] = useState(false);
+  const [isSpaceHeld, setIsSpaceHeld] = useState(false);
   const [imageAspect, setImageAspect] = useState<number | null>(null);
   const [viewportSize, setViewportSize] = useState<{ width: number; height: number } | null>(null);
   const [view, setView] = useState<ViewState>({ zoom: 1, offsetX: 0, offsetY: 0 });
@@ -100,6 +101,46 @@ export function FloorPlanCanvas({
     setImageAspect(null);
     setView({ zoom: 1, offsetX: 0, offsetY: 0 });
   }
+
+  // 스페이스바를 누르고 있는 동안 손바닥(팬) 모드로 전환합니다. 입력 필드에 타이핑 중일 때는 무시합니다.
+  useEffect(() => {
+    function isTypingTarget(target: EventTarget | null): boolean {
+      return (
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      );
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.code !== "Space" || isTypingTarget(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      setIsSpaceHeld(true);
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.code === "Space") {
+        setIsSpaceHeld(false);
+      }
+    }
+
+    function handleWindowBlur() {
+      setIsSpaceHeld(false);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleWindowBlur);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleWindowBlur);
+    };
+  }, []);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -196,7 +237,7 @@ export function FloorPlanCanvas({
 
   /** 클릭 이벤트 대신 pointerdown→pointerup 이동 거리로 배치를 판정해 팬 제스처와 확실히 구분합니다. */
   function placeMarkerAt(event: Pick<PointerEvent<HTMLDivElement>, "clientX" | "clientY">) {
-    if (isDisabled) {
+    if (isDisabled || isSpaceHeld) {
       return;
     }
 
@@ -215,7 +256,11 @@ export function FloorPlanCanvas({
 
     const worldRect = worldRef.current.getBoundingClientRect();
     const viewportRect = viewportRef.current.getBoundingClientRect();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // 포인터가 이미 해제된 경우 캡처 없이 계속합니다.
+    }
     panRef.current = {
       startClientX: event.clientX,
       startClientY: event.clientY,
@@ -226,13 +271,18 @@ export function FloorPlanCanvas({
   }
 
   function handleMarkerPointerDown(event: PointerEvent<HTMLDivElement>, marker: Marker) {
-    if (isDisabled) {
+    // 스페이스 팬 모드에서는 마커를 잡지 않고 이벤트를 캔버스로 흘려 화면 이동만 하게 합니다.
+    if (isDisabled || isSpaceHeld) {
       return;
     }
 
     event.preventDefault();
     event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // 포인터가 이미 해제된 경우 캡처 없이 계속합니다.
+    }
     dragRef.current = {
       id: marker.id,
       startX: marker.x,
@@ -344,7 +394,13 @@ export function FloorPlanCanvas({
         })()
       : null;
 
-  const cursorClass = isPanning ? "cursor-grabbing" : isDisabled ? "cursor-default" : "cursor-crosshair";
+  const cursorClass = isPanning
+    ? "cursor-grabbing"
+    : isSpaceHeld
+      ? "cursor-grab"
+      : isDisabled
+        ? "cursor-default"
+        : "cursor-crosshair";
 
   return (
     <div
