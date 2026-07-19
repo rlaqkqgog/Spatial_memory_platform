@@ -247,7 +247,9 @@ export function ExperimentClient() {
               onDeleteMarker={handleDeleteMarker}
               onMarkerPositionChange={handleMarkerPositionChange}
             />
-            <p className="mt-3 text-sm text-slate-500">평면도의 빈 위치를 클릭해 선택한 색상의 마커를 배치하세요.</p>
+            <p className="mt-3 text-sm text-slate-500">
+              드래그로 평면도를 이동하고 휠로 확대·축소한 뒤, 빈 위치를 클릭해 선택한 색상의 마커를 배치하세요.
+            </p>
           </section>
 
           <aside className="space-y-4">

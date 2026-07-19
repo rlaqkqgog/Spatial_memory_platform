@@ -9,6 +9,7 @@ export function ExperimentInstructions() {
       </h2>
       <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-slate-600">
         <li>색상을 선택합니다.</li>
+        <li>평면도는 빈 곳을 드래그해 이동하고, 마우스 휠이나 +/− 버튼으로 확대·축소합니다.</li>
         <li>기억나는 위치를 평면도에서 클릭해 마커를 놓습니다.</li>
         <li>마커는 드래그하여 옮길 수 있고, × 버튼으로 삭제할 수 있습니다.</li>
         <li>모든 색상에서 3개씩, 총 12개를 입력한 뒤 제출합니다.</li>
