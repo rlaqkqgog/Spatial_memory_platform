@@ -42,6 +42,13 @@ export function IncidentalRecognitionForm({
                 >
                   {index + 1}
                 </span>
+                {/* eslint-disable-next-line @next/next/no-img-element -- public 폴더의 정적 축소 이미지라 최적화가 필요 없습니다. */}
+                <img
+                  src={`/incidental/${objectDef.id}.png`}
+                  alt=""
+                  draggable={false}
+                  className="h-20 w-20 shrink-0 select-none rounded-xl border border-slate-200 bg-white object-contain p-1"
+                />
                 {objectDef.label}
               </span>
               <div role="radiogroup" aria-label={`${objectDef.label}을(를) 본 적이 있나요?`} className="flex gap-2">
