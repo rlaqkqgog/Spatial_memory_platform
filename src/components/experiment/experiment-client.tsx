@@ -198,8 +198,12 @@ export function ExperimentClient() {
     setNotice({ kind: "info", message: `${GUIDE_TYPE_LABELS[activeGuide]}의 마커를 초기화했습니다.` });
   }
 
-  async function handlePositionSubmit() {
-    if (!participantId || !experimentDate || !floorPlan || !positionStartedAt || isSubmitting) {
+  /**
+   * 위치 응답은 아직 저장하지 않고 2단계로 넘어갑니다.
+   * 실제 저장은 마지막 제출에서 한꺼번에 하므로, 2단계에서 위치 응답으로 돌아가 자유롭게 수정할 수 있습니다.
+   */
+  function handleProceedToIncidental() {
+    if (!participantId || !experimentDate || !floorPlan || isSubmitting) {
       return;
     }
 
@@ -207,48 +211,23 @@ export function ExperimentClient() {
     if (incompleteGuide) {
       setNotice({
         kind: "error",
-        message: `${GUIDE_TYPE_LABELS[incompleteGuide]}의 마커가 ${markersByGuide[incompleteGuide].length}/${TOTAL_MARKERS}개입니다. 세 가이드 모두 ${TOTAL_MARKERS}개를 입력해야 제출할 수 있습니다.`,
+        message: `${GUIDE_TYPE_LABELS[incompleteGuide]}의 마커가 ${markersByGuide[incompleteGuide].length}/${TOTAL_MARKERS}개입니다. 세 가이드 모두 ${TOTAL_MARKERS}개를 입력해야 합니다.`,
       });
       setActiveGuide(incompleteGuide);
       return;
     }
 
-    setIsSubmitting(true);
     setNotice(null);
+    setRecognitionStartedAt(now());
+    setPhase("incidental");
+  }
 
-    const submittedAt = now();
-    const savedIds = { ...positionIdByGuide };
-    try {
-      for (const guide of GUIDE_ORDER) {
-        if (savedIds[guide]) {
-          continue; // 이미 저장된 가이드는 재제출하지 않습니다.
-        }
-        const submissionEvents = [...eventsByGuide[guide], { type: "submit" as const, occurredAt: submittedAt }];
-        const { submissionId } = await submitExperiment({
-          experimentCode: floorPlan,
-          participantId,
-          experimentDate,
-          guideType: guide,
-          startedAt: positionStartedAt,
-          submittedAt,
-          deletedMarkerCount: deletedByGuide[guide],
-          markers: markersByGuide[guide],
-          events: submissionEvents,
-        });
-        savedIds[guide] = submissionId;
-      }
-      setPositionIdByGuide(savedIds);
-
-      // 2단계(우연객체 재인 검사)로 넘어갑니다.
-      setRecognitionStartedAt(now());
-      setPhase("incidental");
-    } catch (error) {
-      setPositionIdByGuide(savedIds);
-      const message = error instanceof Error ? error.message : "응답을 저장하지 못했습니다.";
-      setNotice({ kind: "error", message });
-    } finally {
-      setIsSubmitting(false);
+  function handleBackToPosition() {
+    if (isSubmitting) {
+      return;
     }
+    setNotice(null);
+    setPhase("position");
   }
 
   function handleSessionSelect(guide: GuideType, session: SessionNumber | "") {
@@ -284,7 +263,7 @@ export function ExperimentClient() {
   }
 
   async function handleIncidentalSubmit() {
-    if (!participantId || !experimentDate || !floorPlan || !recognitionStartedAt || isSubmitting) {
+    if (!participantId || !experimentDate || !floorPlan || !positionStartedAt || !recognitionStartedAt || isSubmitting) {
       return;
     }
 
@@ -307,11 +286,34 @@ export function ExperimentClient() {
     setIsSubmitting(true);
     setNotice(null);
 
-    const submittedAt = now();
-    const savedIds = { ...recognitionIdByGuide };
+    // 위치 응답과 우연객체 응답을 마지막에 함께 저장합니다. 이미 저장된 항목은 재시도 시 건너뜁니다.
+    const positionSubmittedAt = now();
+    const recognitionSubmittedAt = now();
+    const savedPositionIds = { ...positionIdByGuide };
+    const savedRecognitionIds = { ...recognitionIdByGuide };
     try {
       for (const guide of GUIDE_ORDER) {
-        if (savedIds[guide]) {
+        if (savedPositionIds[guide]) {
+          continue;
+        }
+        const submissionEvents = [...eventsByGuide[guide], { type: "submit" as const, occurredAt: positionSubmittedAt }];
+        const { submissionId } = await submitExperiment({
+          experimentCode: floorPlan,
+          participantId,
+          experimentDate,
+          guideType: guide,
+          startedAt: positionStartedAt,
+          submittedAt: positionSubmittedAt,
+          deletedMarkerCount: deletedByGuide[guide],
+          markers: markersByGuide[guide],
+          events: submissionEvents,
+        });
+        savedPositionIds[guide] = submissionId;
+      }
+      setPositionIdByGuide(savedPositionIds);
+
+      for (const guide of GUIDE_ORDER) {
+        if (savedRecognitionIds[guide]) {
           continue;
         }
         const session = sessionByGuide[guide] as SessionNumber;
@@ -324,17 +326,18 @@ export function ExperimentClient() {
           experimentCode: buildExperimentCode(floorPlan, session),
           participantId,
           guideType: guide,
-          mainSubmissionId: positionIdByGuide[guide] ?? "",
+          mainSubmissionId: savedPositionIds[guide] ?? "",
           startedAt: recognitionStartedAt,
-          submittedAt,
+          submittedAt: recognitionSubmittedAt,
           responses,
         });
-        savedIds[guide] = submissionId;
+        savedRecognitionIds[guide] = submissionId;
       }
-      setRecognitionIdByGuide(savedIds);
+      setRecognitionIdByGuide(savedRecognitionIds);
       setPhase("done");
     } catch (error) {
-      setRecognitionIdByGuide(savedIds);
+      setPositionIdByGuide(savedPositionIds);
+      setRecognitionIdByGuide(savedRecognitionIds);
       const message = error instanceof Error ? error.message : "응답을 저장하지 못했습니다.";
       setNotice({ kind: "error", message });
     } finally {
@@ -457,16 +460,27 @@ export function ExperimentClient() {
 
             {noticeBox}
 
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={handleBackToPosition}
+                className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                ← 위치 응답 수정
+              </button>
               <button
                 type="button"
                 disabled={isSubmitting}
                 onClick={handleIncidentalSubmit}
                 className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isSubmitting ? "저장 중…" : "제출"}
+                {isSubmitting ? "저장 중…" : "최종 제출"}
               </button>
             </div>
+            <p className="text-right text-xs text-slate-400">
+              위치 응답과 우연객체 확인은 최종 제출 시 함께 저장됩니다. 그 전까지 자유롭게 수정할 수 있습니다.
+            </p>
           </div>
         </div>
       </main>
@@ -555,15 +569,15 @@ export function ExperimentClient() {
               <button
                 type="button"
                 disabled={isSubmitting || !allGuidesComplete}
-                onClick={handlePositionSubmit}
+                onClick={handleProceedToIncidental}
                 className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isSubmitting ? "저장 중…" : "제출"}
+                다음: 우연객체 확인
               </button>
             </div>
             {!allGuidesComplete ? (
               <p className="text-center text-xs text-slate-400">
-                세 가이드 모두 {TOTAL_MARKERS}개를 입력하면 제출할 수 있습니다.
+                세 가이드 모두 {TOTAL_MARKERS}개를 입력하면 다음 단계로 넘어갈 수 있습니다.
               </p>
             ) : null}
           </aside>
