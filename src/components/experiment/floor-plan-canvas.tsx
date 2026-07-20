@@ -63,8 +63,8 @@ interface FloorPlanCanvasProps {
   onDeleteMarker: (markerId: string) => void;
   /** commit이 true일 때만 마커 이동 횟수를 기록합니다. */
   onMarkerPositionChange: (markerId: string, x: number, y: number, commit: boolean) => void;
-  /** 왼쪽 상단에 겹쳐 표시할 요소입니다(예: 가이드 전환 버튼). */
-  topLeftOverlay?: ReactNode;
+  /** 왼쪽 하단에 겹쳐 표시할 요소입니다(예: 가이드 전환 버튼). */
+  bottomLeftOverlay?: ReactNode;
 }
 
 /** 도면이 뷰포트보다 작으면 가운데 정렬하고, 크면 빈 공간이 보이지 않도록 오프셋을 제한합니다. */
@@ -99,7 +99,7 @@ export function FloorPlanCanvas({
   onPlaceMarker,
   onDeleteMarker,
   onMarkerPositionChange,
-  topLeftOverlay,
+  bottomLeftOverlay,
 }: FloorPlanCanvasProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
@@ -394,13 +394,13 @@ export function FloorPlanCanvas({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
     >
-      {topLeftOverlay ? (
+      {bottomLeftOverlay ? (
         <div
-          className="absolute left-3 top-3 z-30"
+          className="absolute bottom-3 left-3 z-30"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
         >
-          {topLeftOverlay}
+          {bottomLeftOverlay}
         </div>
       ) : null}
 
