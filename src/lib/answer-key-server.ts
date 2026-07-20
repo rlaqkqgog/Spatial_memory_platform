@@ -308,3 +308,14 @@ export async function buildSubmissionsCsv(submissionId?: string): Promise<{ csv:
 
   return { csv, label };
 }
+
+/**
+ * 첨부 파일 다운로드용 Content-Disposition 헤더 값을 만듭니다.
+ * participant_id 등에 한글(비ASCII)이 섞여도 헤더 생성이 실패하지 않도록,
+ * ASCII 대체 파일명과 RFC 5987 UTF-8 인코딩 파일명을 함께 넣습니다.
+ */
+export function attachmentContentDisposition(filename: string): string {
+  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
+  const encoded = encodeURIComponent(filename);
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
+}
