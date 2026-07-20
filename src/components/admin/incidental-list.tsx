@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Fragment, useState } from "react";
 
 import type { IncidentalResponseRow, IncidentalSubmissionSummary } from "@/lib/incidental-server";
@@ -18,16 +19,71 @@ function formatDuration(durationMs: number): string {
   return `${minutes}분 ${seconds}초`;
 }
 
-/** 배치/미출현 × 봤음/못봤음 조합에 대한 판정 라벨입니다. */
+/** 실제 적용 중인 정답 판정 라벨입니다. 수동으로 덮어썼으면 "수동" 표시를 붙입니다. */
 function verdict(response: IncidentalResponseRow): { label: string; className: string } {
-  if (response.was_present) {
-    return response.seen
-      ? { label: "정답 (배치·봤음)", className: "text-emerald-700" }
-      : { label: "누락 (배치·못봤음)", className: "text-red-600" };
+  const basis = response.was_present
+    ? response.seen
+      ? "배치·봤음"
+      : "배치·못봤음"
+    : response.seen
+      ? "미출현·봤음"
+      : "미출현·못봤음";
+  const manual = response.manual_correct !== null ? " · 수동" : "";
+  return {
+    label: `${response.correct ? "정답" : "오답"} (${basis})${manual}`,
+    className: response.correct ? "text-emerald-700" : "text-red-600",
+  };
+}
+
+/** 자동 / 정답 / 오답 3단계 수동 채점 컨트롤입니다. */
+function GradeControl({ response }: { response: IncidentalResponseRow }) {
+  const router = useRouter();
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState(false);
+
+  const value = response.manual_correct === null ? "auto" : response.manual_correct ? "correct" : "incorrect";
+
+  async function handleChange(next: string) {
+    const manualCorrect = next === "auto" ? null : next === "correct";
+    setIsSaving(true);
+    setError(false);
+    try {
+      const res = await fetch(`/api/admin/incidental/responses/${response.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ manualCorrect }),
+      });
+      if (!res.ok) {
+        throw new Error("failed");
+      }
+      // 서버에서 정답률·집계를 다시 계산하도록 데이터를 새로고침합니다.
+      router.refresh();
+    } catch {
+      setError(true);
+    } finally {
+      setIsSaving(false);
+    }
   }
-  return response.seen
-    ? { label: "오답 (미출현·봤음)", className: "text-red-600" }
-    : { label: "정답 (미출현·못봤음)", className: "text-emerald-700" };
+
+  return (
+    <span className="flex items-center gap-2">
+      <select
+        aria-label={`${response.label} 수동 채점`}
+        value={value}
+        disabled={isSaving}
+        onChange={(event) => handleChange(event.target.value)}
+        className={`rounded-lg border px-2 py-1 text-xs outline-none transition focus:ring-2 disabled:opacity-50 ${
+          response.manual_correct !== null ? "border-indigo-400 bg-indigo-50 text-indigo-800" : "border-slate-300 text-slate-700"
+        }`}
+      >
+        <option value="auto">자동</option>
+        <option value="correct">정답</option>
+        <option value="incorrect">오답</option>
+      </select>
+      {isSaving ? <span className="text-xs text-slate-400">저장 중…</span> : null}
+      {error ? <span className="text-xs text-red-600">오류</span> : null}
+    </span>
+  );
 }
 
 function ResponseBreakdown({ responses }: { responses: IncidentalResponseRow[] }) {
@@ -41,6 +97,7 @@ function ResponseBreakdown({ responses }: { responses: IncidentalResponseRow[] }
             <th className="px-3 py-2 font-semibold">실제 배치</th>
             <th className="px-3 py-2 font-semibold">참가자 응답</th>
             <th className="px-3 py-2 font-semibold">판정</th>
+            <th className="px-3 py-2 font-semibold">수동 채점</th>
             <th className="px-3 py-2 font-semibold">변경 횟수</th>
             <th className="px-3 py-2 font-semibold">응답 시각</th>
           </tr>
@@ -55,6 +112,9 @@ function ResponseBreakdown({ responses }: { responses: IncidentalResponseRow[] }
                 <td className="px-3 py-2">{response.was_present ? "배치됨" : "미출현"}</td>
                 <td className="px-3 py-2">{response.seen ? "봤음" : "못봤음"}</td>
                 <td className={`px-3 py-2 font-semibold ${decision.className}`}>{decision.label}</td>
+                <td className="px-3 py-2">
+                  <GradeControl response={response} />
+                </td>
                 <td className="px-3 py-2 tabular-nums">{response.change_count}</td>
                 <td className="px-3 py-2 text-slate-500">{formatDateTime(response.answered_at)}</td>
               </tr>
@@ -62,6 +122,9 @@ function ResponseBreakdown({ responses }: { responses: IncidentalResponseRow[] }
           })}
         </tbody>
       </table>
+      <p className="mt-2 text-xs text-slate-400">
+        수동 채점을 &ldquo;정답/오답&rdquo;으로 바꾸면 해당 응답의 판정을 덮어쓰고 정답률이 다시 계산됩니다. &ldquo;자동&rdquo;은 참가자 응답과 실제 배치를 비교한 기본 채점입니다.
+      </p>
     </div>
   );
 }

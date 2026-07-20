@@ -16,6 +16,8 @@ function guideTypeOrNull(value: unknown): GuideType | null {
 }
 
 export interface IncidentalResponseRow {
+  /** 응답 행 id — 수동 채점 저장 시 사용합니다. */
+  id: string;
   display_order: number;
   object_id: string;
   label: string;
@@ -23,7 +25,11 @@ export interface IncidentalResponseRow {
   seen: boolean;
   /** 실제로 그 세션에 배치되었던 객체인지(정답) */
   was_present: boolean;
-  /** seen === was_present 이면 정답 */
+  /** 자동 채점 결과: seen === was_present */
+  auto_correct: boolean;
+  /** 관리자가 수동으로 지정한 정답 여부. null이면 자동 채점을 사용합니다. */
+  manual_correct: boolean | null;
+  /** 실제 적용되는 정답 여부: manual_correct ?? auto_correct */
   correct: boolean;
   change_count: number;
   answered_at: string;
@@ -52,22 +58,29 @@ export interface IncidentalSubmissionSummary {
 }
 
 interface RawResponse {
+  id: string;
   display_order: number;
   object_id: string;
   seen: boolean;
   was_present: boolean;
+  manual_correct: boolean | null;
   answered_at: string;
   change_count: number;
 }
 
 function toResponseRow(raw: RawResponse): IncidentalResponseRow {
+  const autoCorrect = raw.seen === raw.was_present;
+  const manualCorrect = typeof raw.manual_correct === "boolean" ? raw.manual_correct : null;
   return {
+    id: raw.id,
     display_order: raw.display_order,
     object_id: raw.object_id,
     label: LABEL_BY_OBJECT_ID.get(raw.object_id) ?? raw.object_id,
     seen: raw.seen,
     was_present: raw.was_present,
-    correct: raw.seen === raw.was_present,
+    auto_correct: autoCorrect,
+    manual_correct: manualCorrect,
+    correct: manualCorrect ?? autoCorrect,
     change_count: raw.change_count,
     answered_at: raw.answered_at,
   };
@@ -113,7 +126,7 @@ export async function listIncidentalRecognitions(): Promise<IncidentalSubmission
   const { data, error } = await supabase
     .from("incidental_recognition_submissions")
     .select(
-      "id, participant_id, experiment_code, guide_type, main_submission_id, started_at, submitted_at, duration_ms, incidental_recognition_responses(display_order, object_id, seen, was_present, answered_at, change_count)",
+      "id, participant_id, experiment_code, guide_type, main_submission_id, started_at, submitted_at, duration_ms, incidental_recognition_responses(id, display_order, object_id, seen, was_present, manual_correct, answered_at, change_count)",
     )
     .order("submitted_at", { ascending: false });
 
@@ -156,6 +169,8 @@ const INCIDENTAL_CSV_HEADER = [
   "wasPresent",
   "seen",
   "correct",
+  "autoCorrect",
+  "manualOverride",
   "changeCount",
   "answeredAt",
   "startedAt",
@@ -192,6 +207,8 @@ export async function buildIncidentalCsv(): Promise<string | null> {
           response.was_present,
           response.seen,
           response.correct,
+          response.auto_correct,
+          response.manual_correct === null ? "" : response.manual_correct,
           response.change_count,
           response.answered_at,
           submission.started_at,
@@ -206,4 +223,23 @@ export async function buildIncidentalCsv(): Promise<string | null> {
   }
 
   return `${lines.join("\r\n")}\r\n`;
+}
+
+/**
+ * 응답 하나의 정답/오답을 수동으로 덮어씁니다.
+ * manualCorrect가 null이면 자동 채점(seen === was_present)으로 되돌립니다.
+ */
+export async function setIncidentalManualGrade(responseId: string, manualCorrect: boolean | null): Promise<void> {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase
+    .from("incidental_recognition_responses")
+    .update({
+      manual_correct: manualCorrect,
+      manual_graded_at: manualCorrect === null ? null : new Date().toISOString(),
+    })
+    .eq("id", responseId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }
