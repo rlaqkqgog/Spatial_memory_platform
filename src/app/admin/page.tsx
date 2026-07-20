@@ -76,6 +76,12 @@ export default async function AdminPage() {
             >
               정답 세트 · 채점
             </Link>
+            <Link
+              href="/admin/incidental"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              우연객체 응답
+            </Link>
             <p className="text-sm text-slate-600">{admin.email}</p>
             <form action="/api/admin/logout" method="post">
               <button
