@@ -13,6 +13,14 @@ import {
 } from "@/lib/answer-key";
 import type { FloorPlan, GuideType, MarkerColor, SessionNumber } from "@/types/experiment";
 
+export interface AnswerKeyStoneRow {
+  color: MarkerColor;
+  label: string;
+  room_id: string | null;
+  world_x: number;
+  world_z: number;
+}
+
 export interface AnswerKeySummary {
   id: string;
   participant_id: string;
@@ -23,6 +31,7 @@ export interface AnswerKeySummary {
   source_filename: string | null;
   created_at: string;
   stone_count: number;
+  stones: AnswerKeyStoneRow[];
 }
 
 /** 정답 CSV를 저장(교체)합니다. */
@@ -58,7 +67,9 @@ export async function listAnswerKeys(): Promise<AnswerKeySummary[]> {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("answer_keys")
-    .select("id, participant_id, floor_plan, session_number, set_id, guide_mode, source_filename, created_at, answer_key_stones(count)")
+    .select(
+      "id, participant_id, floor_plan, session_number, set_id, guide_mode, source_filename, created_at, answer_key_stones(color, label, room_id, world_x, world_z)",
+    )
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -66,7 +77,14 @@ export async function listAnswerKeys(): Promise<AnswerKeySummary[]> {
   }
 
   return (data ?? []).map((row) => {
-    const stonesField = (row as { answer_key_stones?: { count: number }[] }).answer_key_stones;
+    const rawStones = ((row as { answer_key_stones?: unknown[] }).answer_key_stones ?? []) as AnswerKeyStoneRow[];
+    const stones = rawStones.map((stone) => ({
+      color: stone.color,
+      label: stone.label,
+      room_id: stone.room_id,
+      world_x: stone.world_x,
+      world_z: stone.world_z,
+    }));
     return {
       id: row.id as string,
       participant_id: row.participant_id as string,
@@ -76,7 +94,8 @@ export async function listAnswerKeys(): Promise<AnswerKeySummary[]> {
       guide_mode: (row.guide_mode as string | null) ?? null,
       source_filename: (row.source_filename as string | null) ?? null,
       created_at: row.created_at as string,
-      stone_count: stonesField?.[0]?.count ?? 0,
+      stone_count: stones.length,
+      stones,
     };
   });
 }
