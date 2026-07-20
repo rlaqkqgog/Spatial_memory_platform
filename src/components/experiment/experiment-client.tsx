@@ -95,6 +95,33 @@ export function ExperimentClient() {
     setPhase("position");
   }
 
+  /** 참가자 정보 입력 화면으로 돌아갑니다(이름을 잘못 입력한 경우 등). 입력한 마커는 지워집니다. */
+  function handleRestart() {
+    if (isSubmitting) {
+      return;
+    }
+    const hasProgress = GUIDE_ORDER.some((guide) => markersByGuide[guide].length > 0);
+    if (hasProgress && !window.confirm("참가자 정보 입력 화면으로 돌아갈까요? 지금까지 입력한 마커가 모두 지워집니다.")) {
+      return;
+    }
+    setParticipantId(null);
+    setExperimentDate(null);
+    setFloorPlan(null);
+    setPhase("position");
+    setActiveGuide("AAG");
+    setActiveColor("red");
+    setMarkersByGuide(byGuide(() => []));
+    setEventsByGuide(byGuide(() => []));
+    setDeletedByGuide(byGuide(() => 0));
+    setPositionIdByGuide(byGuide(() => null));
+    setPositionStartedAt(null);
+    setRecognitionStartedAt(null);
+    setSessionByGuide(byGuide(() => ""));
+    setRecognitionByGuide(byGuide(() => new Map()));
+    setRecognitionIdByGuide(byGuide(() => null));
+    setNotice(null);
+  }
+
   function handleGuideSelect(guide: GuideType) {
     if (isPositionDisabled) {
       return;
@@ -524,7 +551,17 @@ export function ExperimentClient() {
             <p className="text-sm font-semibold tracking-wide text-indigo-600">공간기억 연구 · 1단계</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">위치 응답 입력</h1>
           </div>
-          {headerLine}
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            {headerLine}
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={handleRestart}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              ← 참가자 정보 수정
+            </button>
+          </div>
         </header>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
