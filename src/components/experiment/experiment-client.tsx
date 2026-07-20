@@ -573,7 +573,7 @@ export function ExperimentClient() {
               onPlaceMarker={handlePlaceMarker}
               onDeleteMarker={handleDeleteMarker}
               onMarkerPositionChange={handleMarkerPositionChange}
-              bottomLeftOverlay={guideButtons}
+              bottomRightOverlay={guideButtons}
             />
             <p className="mt-3 text-sm text-slate-500">
               왼쪽 위에서 가이드(AAG·VG·NG)를 선택하면 그 가이드의 위치를 입력합니다. 세 가이드 모두 마커
