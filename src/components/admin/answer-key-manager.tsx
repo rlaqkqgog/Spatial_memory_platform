@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useCallback, useRef, useState, type DragEvent } from "react";
 
 import type { AnswerKeySummary } from "@/lib/answer-key-server";
 import { roomName } from "@/lib/room-names";
@@ -68,17 +68,28 @@ export function AnswerKeyManager({ answerKeys }: AnswerKeyManagerProps) {
     message: "",
   });
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  // 자식 요소를 지날 때마다 dragleave가 나므로 진입/이탈 횟수를 세어 테두리 깜빡임을 막습니다.
+  const dragDepth = useRef(0);
 
-  async function handleFiles(files: FileList | null) {
-    if (!files || files.length === 0) {
+  async function handleFiles(fileList: FileList | File[] | null) {
+    const files = fileList ? Array.from(fileList) : [];
+    if (files.length === 0) {
       return;
     }
+
+    const csvFiles = files.filter((file) => file.name.toLowerCase().endsWith(".csv") || file.type === "text/csv");
+    if (csvFiles.length === 0) {
+      setStatus({ kind: "error", message: "CSV 파일만 업로드할 수 있습니다." });
+      return;
+    }
+
     setIsUploading(true);
     setStatus({ kind: "idle", message: "" });
 
     const results: string[] = [];
     try {
-      for (const file of Array.from(files)) {
+      for (const file of csvFiles) {
         const csv = await file.text();
         const response = await fetch("/api/admin/answer-keys", {
           method: "POST",
@@ -95,7 +106,11 @@ export function AnswerKeyManager({ answerKeys }: AnswerKeyManagerProps) {
           `${payload?.participantId} · ${payload?.floorPlan}-${payload?.sessionNumber} · 정답 ${payload?.stoneCount}개`,
         );
       }
-      setStatus({ kind: "success", message: `업로드 완료: ${results.join(" / ")}` });
+      const skipped = files.length - csvFiles.length;
+      setStatus({
+        kind: "success",
+        message: `업로드 완료: ${results.join(" / ")}${skipped > 0 ? ` (CSV가 아닌 ${skipped}개 제외)` : ""}`,
+      });
       router.refresh();
     } catch (error) {
       setStatus({ kind: "error", message: error instanceof Error ? error.message : "업로드 중 오류가 발생했습니다." });
@@ -105,6 +120,37 @@ export function AnswerKeyManager({ answerKeys }: AnswerKeyManagerProps) {
         fileInputRef.current.value = "";
       }
     }
+  }
+
+  const handleDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    dragDepth.current += 1;
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    dragDepth.current -= 1;
+    if (dragDepth.current <= 0) {
+      dragDepth.current = 0;
+      setIsDragging(false);
+    }
+  }, []);
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    // 기본 동작(브라우저가 파일을 열어 버림)을 막아야 drop 이벤트가 발생합니다.
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    dragDepth.current = 0;
+    setIsDragging(false);
+    if (isUploading) {
+      return;
+    }
+    void handleFiles(event.dataTransfer.files);
   }
 
   async function handleDelete(id: string, label: string) {
@@ -124,20 +170,44 @@ export function AnswerKeyManager({ answerKeys }: AnswerKeyManagerProps) {
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">정답 CSV 업로드</h2>
         <p className="mt-1 text-sm leading-6 text-slate-600">
-          <code className="rounded bg-slate-100 px-1">spawned_object_answer_key.csv</code> 파일을 선택하세요. 파일 안의
+          <code className="rounded bg-slate-100 px-1">spawned_object_answer_key.csv</code> 파일을 끌어다 놓거나
+          선택하세요. 파일 안의
           <code className="mx-1 rounded bg-slate-100 px-1">participantId</code>와
           <code className="mx-1 rounded bg-slate-100 px-1">setId</code>(예: FP1-S3)로 참가자·평면도·세션이 자동
-          지정됩니다. 여러 파일을 한 번에 선택할 수 있고, 같은 조합은 재업로드 시 교체됩니다.
+          지정되므로 <strong className="font-semibold">파일 이름은 모두 같아도 됩니다.</strong> 여러 파일을 한 번에
+          올릴 수 있고, 같은 참가자·평면도-세션 조합은 재업로드 시 교체됩니다.
         </p>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,text/csv"
-          multiple
-          disabled={isUploading}
-          onChange={(event) => handleFiles(event.target.files)}
-          className="mt-4 block w-full text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-indigo-700 disabled:opacity-50"
-        />
+        <div
+          onDragEnter={handleDragEnter}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`mt-4 rounded-2xl border-2 border-dashed px-6 py-8 text-center transition ${
+            isDragging ? "border-indigo-500 bg-indigo-50" : "border-slate-300 bg-slate-50"
+          } ${isUploading ? "opacity-60" : ""}`}
+        >
+          <p className="text-sm font-semibold text-slate-700">
+            {isUploading ? "업로드 중…" : isDragging ? "여기에 놓으세요" : "CSV 파일을 이곳에 끌어다 놓으세요"}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">또는</p>
+          <button
+            type="button"
+            disabled={isUploading}
+            onClick={() => fileInputRef.current?.click()}
+            className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+          >
+            파일 선택
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            multiple
+            disabled={isUploading}
+            onChange={(event) => handleFiles(event.target.files)}
+            className="sr-only"
+          />
+        </div>
         {status.kind !== "idle" ? (
           <p
             role={status.kind === "error" ? "alert" : "status"}

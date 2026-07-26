@@ -134,6 +134,8 @@ npm run build
 
 가이드 유형 기록 기능을 배포하기 전에 `supabase/migrations/202607170001_add_guide_type.sql`과 `202607170002_normalize_guide_types.sql`을 순서대로 실행하세요. 기존 응답은 `unspecified`(미기록)로 유지되고, 이후 응답은 시각 가이드 `VG`, 음성 가이드 `AAG`, 가이드 없음 `NG` 중 하나로 저장됩니다. 관리자 응답 목록과 `admin_event_log`에도 같은 코드가 표시됩니다.
 
+우연객체 재인 검사(관리자 **우연객체 재인 응답** 화면)를 쓰려면 `supabase/migrations`의 `202607190002_incidental_recognition.sql`과 수동 채점 컬럼을 추가하는 `202607200002_incidental_manual_grade.sql`을 순서대로 실행하세요. 뒤쪽을 빠뜨리면 `manual_correct` 컬럼이 없어 목록 조회가 실패합니다.
+
 ## Vercel 배포
 
 1. 이 프로젝트를 GitHub 저장소에 올립니다.

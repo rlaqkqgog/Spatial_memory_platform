@@ -14,11 +14,13 @@ export default async function IncidentalPage() {
   }
 
   let submissions: IncidentalSubmissionSummary[] = [];
-  let loadError = false;
+  let loadError: string | null = null;
   try {
     submissions = await listIncidentalRecognitions();
-  } catch {
-    loadError = true;
+  } catch (error) {
+    // 어떤 마이그레이션이 빠졌는지 알 수 있도록 원본 메시지를 남기고 화면에도 보여 줍니다.
+    loadError = error instanceof Error ? error.message : String(error);
+    console.error("[admin/incidental] 재인 응답 조회 실패:", error);
   }
 
   return (
@@ -52,7 +54,12 @@ export default async function IncidentalPage() {
 
         {loadError ? (
           <section role="alert" className="rounded-2xl bg-red-50 px-5 py-4 text-sm text-red-700">
-            우연객체 응답을 불러오지 못했습니다. migration 202607190002가 적용되었는지 확인해 주세요.
+            <p>
+              우연객체 응답을 불러오지 못했습니다. <code>supabase/migrations</code>의{" "}
+              <code>202607190002_incidental_recognition.sql</code>과{" "}
+              <code>202607200002_incidental_manual_grade.sql</code>이 순서대로 적용되었는지 확인해 주세요.
+            </p>
+            <p className="mt-2 break-words font-mono text-xs text-red-600">{loadError}</p>
           </section>
         ) : (
           <IncidentalList submissions={submissions} />
