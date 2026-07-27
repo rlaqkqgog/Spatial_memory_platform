@@ -67,6 +67,8 @@ export function ExperimentClient() {
   const [recognitionIdByGuide, setRecognitionIdByGuide] = useState<Record<GuideType, string | null>>(
     byGuide(() => null),
   );
+  // 최종 제출 직전에 가이드→세션 매핑을 한 번 더 확인하는 단계입니다.
+  const [confirming, setConfirming] = useState(false);
 
   const markers = markersByGuide[activeGuide];
   const remainingByColor = getRemainingMarkersByColor(markers);
@@ -253,6 +255,7 @@ export function ExperimentClient() {
     if (isSubmitting) {
       return;
     }
+    setConfirming(false);
     setNotice(null);
     setPhase("position");
   }
@@ -264,6 +267,8 @@ export function ExperimentClient() {
     setSessionByGuide((current) => ({ ...current, [guide]: session }));
     // 세션을 바꾸면 객체 목록이 달라지므로 해당 가이드의 응답을 초기화합니다.
     setRecognitionByGuide((current) => ({ ...current, [guide]: new Map() }));
+    // 선택이 바뀌면 이전 확인 화면은 더 이상 맞지 않으므로 닫습니다.
+    setConfirming(false);
     setNotice(null);
   }
 
@@ -286,10 +291,12 @@ export function ExperimentClient() {
       });
       return { ...current, [guide]: guideAnswers };
     });
+    setConfirming(false);
     setNotice(null);
   }
 
-  async function handleIncidentalSubmit() {
+  /** 최종 제출 전 검증을 마친 뒤, 가이드→세션 매핑을 다시 확인하는 단계를 띄웁니다. */
+  function handleRequestSubmit() {
     if (!participantId || !experimentDate || !floorPlan || !positionStartedAt || !recognitionStartedAt || isSubmitting) {
       return;
     }
@@ -310,6 +317,17 @@ export function ExperimentClient() {
       }
     }
 
+    setNotice(null);
+    setConfirming(true);
+  }
+
+  /** 매핑을 확인한 뒤 위치·우연객체 응답을 실제로 저장합니다. */
+  async function handleConfirmedSubmit() {
+    if (!participantId || !experimentDate || !floorPlan || !positionStartedAt || !recognitionStartedAt || isSubmitting) {
+      return;
+    }
+
+    setConfirming(false);
     setIsSubmitting(true);
     setNotice(null);
 
@@ -420,6 +438,9 @@ export function ExperimentClient() {
 
   // 2단계: 가이드별 우연객체 재인 검사 화면입니다.
   if (phase === "incidental") {
+    // 한 참가자의 세 가이드는 보통 서로 다른 세션이므로, 중복 선택은 실수일 가능성이 높아 확인 단계에서 경고합니다.
+    const selectedSessions = GUIDE_ORDER.map((guide) => sessionByGuide[guide]).filter(Boolean);
+    const hasDuplicateSession = new Set(selectedSessions).size !== selectedSessions.length;
     return (
       <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl">
@@ -487,24 +508,75 @@ export function ExperimentClient() {
 
             {noticeBox}
 
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={handleBackToPosition}
-                className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            {confirming ? (
+              <section
+                role="alertdialog"
+                aria-label="제출 전 세션 확인"
+                className="rounded-2xl border-2 border-indigo-300 bg-white p-5 shadow-sm"
               >
-                ← 위치 응답 수정
-              </button>
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={handleIncidentalSubmit}
-                className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isSubmitting ? "저장 중…" : "최종 제출"}
-              </button>
-            </div>
+                <h2 className="text-base font-semibold text-slate-900">이대로 저장할까요? 가이드별 세션을 확인해 주세요.</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  아래 세션으로 저장됩니다. 각 가이드에서 실제 진행한 세션과 맞는지 확인해 주세요.
+                </p>
+                <ul className="mt-4 space-y-2">
+                  {GUIDE_ORDER.map((guide) => (
+                    <li
+                      key={guide}
+                      className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+                    >
+                      <span className="text-sm font-medium text-slate-800">{GUIDE_TYPE_LABELS[guide]}</span>
+                      <span className="text-sm font-semibold text-indigo-700">
+                        {floorPlan}-{sessionByGuide[guide]} ·{" "}
+                        {SESSION_NUMBER_LABELS[sessionByGuide[guide] as SessionNumber]}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {hasDuplicateSession ? (
+                  <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                    ⚠ 두 개 이상의 가이드에 같은 세션이 선택되어 있습니다. 보통 한 참가자는 세 세션(S1·S2·S3)을 하나씩
+                    진행합니다. 의도한 것이 맞는지 다시 확인해 주세요.
+                  </p>
+                ) : null}
+                <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => setConfirming(false)}
+                    className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    ← 다시 선택
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleConfirmedSubmit}
+                    className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSubmitting ? "저장 중…" : "확인했습니다, 저장"}
+                  </button>
+                </div>
+              </section>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={handleBackToPosition}
+                  className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  ← 위치 응답 수정
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={handleRequestSubmit}
+                  className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  최종 제출
+                </button>
+              </div>
+            )}
             <p className="text-right text-xs text-slate-400">
               위치 응답과 우연객체 확인은 최종 제출 시 함께 저장됩니다. 그 전까지 자유롭게 수정할 수 있습니다.
             </p>
