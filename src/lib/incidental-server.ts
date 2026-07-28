@@ -1,7 +1,23 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
-import { GUIDE_TYPES, INCIDENTAL_OBJECT_SETS, type GuideType } from "@/types/experiment";
+import {
+  buildExperimentCode,
+  FLOOR_PLANS,
+  GUIDE_TYPES,
+  INCIDENTAL_OBJECT_SETS,
+  SESSION_NUMBERS,
+  type GuideType,
+  type SessionNumber,
+} from "@/types/experiment";
+
+/** experimentCode(예: "FP1-S2") → 세션 번호. 유효하지 않으면 null입니다. */
+const SESSION_BY_EXPERIMENT_CODE = new Map<string, SessionNumber>();
+for (const floorPlan of FLOOR_PLANS) {
+  for (const sessionNumber of SESSION_NUMBERS) {
+    SESSION_BY_EXPERIMENT_CODE.set(buildExperimentCode(floorPlan, sessionNumber), sessionNumber);
+  }
+}
 
 /** object_id → 사람이 읽는 라벨(냄비, 삽 등). 세션마다 같은 라벨을 쓰므로 전 세션을 평탄화합니다. */
 const LABEL_BY_OBJECT_ID = new Map<string, string>();
@@ -241,5 +257,52 @@ export async function setIncidentalManualGrade(responseId: string, manualCorrect
 
   if (error) {
     throw new Error(error.message);
+  }
+}
+
+/**
+ * 우연객체 제출의 세션(experiment_code)을 관리자가 직접 바꿉니다.
+ * 참가자가 답한 물건(object_id)은 그대로 두되, 각 응답의 실제 배치 여부(was_present)를
+ * 새 세션 기준으로 다시 계산해 기록의 정합성을 유지합니다.
+ */
+export async function setIncidentalSession(submissionId: string, experimentCode: string): Promise<void> {
+  const session = SESSION_BY_EXPERIMENT_CODE.get(experimentCode);
+  if (!session) {
+    throw new Error(`Unsupported experiment code: ${experimentCode}`);
+  }
+
+  const presentObjectIds = new Set(
+    INCIDENTAL_OBJECT_SETS[session].filter((objectDef) => objectDef.wasPresent).map((objectDef) => objectDef.id),
+  );
+
+  const supabase = createSupabaseAdminClient();
+
+  const { data: responses, error: fetchError } = await supabase
+    .from("incidental_recognition_responses")
+    .select("id, object_id")
+    .eq("submission_id", submissionId);
+  if (fetchError) {
+    throw new Error(fetchError.message);
+  }
+
+  // 세션 라벨을 먼저 바꿉니다. (뒤 단계가 실패해도 같은 값으로 다시 실행하면 수렴합니다.)
+  const { error: updateError } = await supabase
+    .from("incidental_recognition_submissions")
+    .update({ experiment_code: experimentCode })
+    .eq("id", submissionId);
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+
+  // 각 응답의 was_present를 새 세션의 실제 배치 목록 기준으로 갱신합니다.
+  for (const response of responses ?? []) {
+    const wasPresent = presentObjectIds.has(response.object_id as string);
+    const { error } = await supabase
+      .from("incidental_recognition_responses")
+      .update({ was_present: wasPresent })
+      .eq("id", response.id as string);
+    if (error) {
+      throw new Error(error.message);
+    }
   }
 }

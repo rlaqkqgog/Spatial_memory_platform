@@ -4,7 +4,12 @@ import { useRouter } from "next/navigation";
 import { Fragment, useState } from "react";
 
 import type { IncidentalResponseRow, IncidentalSubmissionSummary } from "@/lib/incidental-server";
-import { GUIDE_TYPE_LABELS } from "@/types/experiment";
+import { buildExperimentCode, FLOOR_PLANS, GUIDE_TYPE_LABELS, SESSION_NUMBERS } from "@/types/experiment";
+
+/** 선택 가능한 모든 세션 코드(FP1-S1 … FP2-S3)입니다. */
+const EXPERIMENT_CODES = FLOOR_PLANS.flatMap((floorPlan) =>
+  SESSION_NUMBERS.map((sessionNumber) => buildExperimentCode(floorPlan, sessionNumber)),
+);
 
 function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat("ko-KR", { dateStyle: "short", timeStyle: "medium", timeZone: "Asia/Seoul" }).format(
@@ -81,6 +86,102 @@ function GradeControl({ response }: { response: IncidentalResponseRow }) {
         <option value="incorrect">오답</option>
       </select>
       {isSaving ? <span className="text-xs text-slate-400">저장 중…</span> : null}
+      {error ? <span className="text-xs text-red-600">오류</span> : null}
+    </span>
+  );
+}
+
+/** 제출의 세션(experiment_code)을 관리자가 직접 바꾸는 컨트롤입니다. */
+function SessionEditControl({ submissionId, experimentCode }: { submissionId: string; experimentCode: string }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(experimentCode);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState(false);
+
+  async function handleSave() {
+    if (value === experimentCode) {
+      setEditing(false);
+      return;
+    }
+    if (
+      !window.confirm(
+        `이 응답의 세션을 ${experimentCode} → ${value}(으)로 바꿀까요?\n\n` +
+          `참가자가 답한 물건 목록은 그대로 유지되고, 정답(실제 배치) 여부만 새 세션 기준으로 다시 계산됩니다.`,
+      )
+    ) {
+      return;
+    }
+    setIsSaving(true);
+    setError(false);
+    try {
+      const res = await fetch(`/api/admin/incidental/submissions/${submissionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ experimentCode: value }),
+      });
+      if (!res.ok) {
+        throw new Error("failed");
+      }
+      setEditing(false);
+      router.refresh();
+    } catch {
+      setError(true);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <span className="flex items-center gap-2">
+        <span className="font-medium text-slate-800">{experimentCode}</span>
+        <button
+          type="button"
+          onClick={() => {
+            setValue(experimentCode);
+            setError(false);
+            setEditing(true);
+          }}
+          className="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+        >
+          편집
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex items-center gap-2">
+      <select
+        aria-label="세션 변경"
+        value={value}
+        disabled={isSaving}
+        onChange={(event) => setValue(event.target.value)}
+        className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900 outline-none transition focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 disabled:opacity-50"
+      >
+        {EXPERIMENT_CODES.map((code) => (
+          <option key={code} value={code}>
+            {code}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        disabled={isSaving}
+        onClick={handleSave}
+        className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+      >
+        {isSaving ? "저장 중…" : "저장"}
+      </button>
+      <button
+        type="button"
+        disabled={isSaving}
+        onClick={() => setEditing(false)}
+        className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+      >
+        취소
+      </button>
       {error ? <span className="text-xs text-red-600">오류</span> : null}
     </span>
   );
@@ -170,7 +271,9 @@ export function IncidentalList({ submissions }: IncidentalListProps) {
                     <td className="whitespace-nowrap px-5 py-3 font-semibold text-slate-950">
                       {submission.participant_id}
                     </td>
-                    <td className="whitespace-nowrap px-5 py-3">{submission.experiment_code}</td>
+                    <td className="whitespace-nowrap px-5 py-3">
+                      <SessionEditControl submissionId={submission.id} experimentCode={submission.experiment_code} />
+                    </td>
                     <td className="whitespace-nowrap px-5 py-3">
                       {submission.guide_type ? GUIDE_TYPE_LABELS[submission.guide_type] : "미기록"}
                     </td>
